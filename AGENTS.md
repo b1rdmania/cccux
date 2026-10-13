@@ -52,15 +52,24 @@ tmux kill-session -t ccmux-verify
 
 Verify the specific area you changed: column alignment, active indicator (`▎`), agent colors, row collapse vs subtitle, sidebar layout, etc. If you can't reach the path you changed (e.g., needs a session in a specific state that doesn't currently exist), say so explicitly rather than claiming success.
 
-**Fully isolated runs.** `CCMUX_TMUX_SOCKET` picks the tmux server a daemon tracks, so a test daemon can own its own server instead of sharing the developer's. Give it a distinct `CCMUX_PORT` as well (the daemon rewrites global tmux hooks, and two on one port fight over the same marker dir):
+**Fully isolated runs.** `CCMUX_TMUX_SOCKET` picks the tmux server a daemon tracks, so a test daemon can own its own server instead of sharing the developer's. Give it a distinct `CCMUX_PORT` as well (the daemon rewrites global tmux hooks, and two on one port fight over the same marker dir), and its own `CCMUX_HOME` so its markers, config, and state stay out of `~/.config/ccmux`. Choose all three per run: agents testing in parallel (several worktrees at once) that copy the same values share one tmux server or marker dir without any error. Start the tmux server with the variables exported so agents launched in it inherit `CCMUX_HOME`, and run the checkout under test by path, since `ccmux` on `PATH` may be another build. An agent's shell state doesn't carry between commands, so re-export the variables in each one (or `source` a file holding them):
 
 ```bash
-tmux -L ccmux-verify new-session -d -x 200 -y 50
-CCMUX_TMUX_SOCKET=ccmux-verify CCMUX_PORT=2270 ccmux daemon start -b
-# ... drive agents on -L ccmux-verify, then:
-CCMUX_TMUX_SOCKET=ccmux-verify CCMUX_PORT=2270 ccmux daemon stop
-tmux -L ccmux-verify kill-server
+RUN=ccmux-verify-$(date +%s)
+export CCMUX_TMUX_SOCKET=$RUN CCMUX_PORT=2270 CCMUX_HOME=$(mktemp -d)   # a free port per concurrent run
+tmux -L "$RUN" new-session -d -x 200 -y 50
+./bin/ccmux daemon start -b
+# ... drive agents on -L "$RUN", then:
+./bin/ccmux daemon stop
+tmux -L "$RUN" kill-server
 ```
+
+A worktree isolates files, not the machine. Even a fully isolated run shares:
+
+- **Agent configs.** `ccmux setup` writes the real `~/.claude/hooks`, `~/.claude/settings.json`, and every other agent's hook config whatever `CCMUX_HOME` says. Never run it from a test.
+- **Marker paths baked at setup.** Only the Claude, Copilot, and Antigravity hook scripts read `CCMUX_HOME` when they fire. The Codex and Cursor scripts and the OpenCode, Pi, and oh-my-pi plugins have `~/.config/ccmux/session-pids` written in at `ccmux setup` time, so an isolated daemon never sees their markers. Hook-path tests for those agents can't be isolated; run them one at a time against the real daemon.
+- **Transcripts.** Every daemon watches the same agent transcript dirs (e.g. `~/.claude/projects`), so run test agents in a scratch directory no real pane uses.
+- **The stash stack.** A repository's worktrees share one `git stash`.
 
 ### Do Not
 
