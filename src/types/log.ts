@@ -8,7 +8,7 @@
 export interface BaseLogEntry {
   parentUuid: string | null;
   uuid: string;
-  timestamp: string;
+  timestamp?: string;
 }
 
 /**
@@ -116,6 +116,10 @@ export interface UserMessage {
 export interface UserLogEntry extends BaseLogEntry {
   type: "user";
   message: UserMessage;
+  /** Claude's own injected entries (command caveats, expanded skill prompts,
+   *  plugin notices, cross-session messages, stop-hook feedback), never
+   *  something the user typed, though some start a turn. */
+  isMeta?: boolean;
   cwd?: string;
   version?: string;
   gitBranch?: string;
@@ -136,6 +140,8 @@ export interface SystemLogEntry extends BaseLogEntry {
   type: "system";
   subtype: string;
   durationMs?: number;
+  /** `stop_hook_summary`: one entry per Stop hook that blocked or failed. */
+  hookErrors?: string[];
 }
 
 /**
@@ -150,6 +156,17 @@ export interface QueueOperationLogEntry {
 }
 
 /**
+ * Any entry whose `type` is not one of the variants above (`mode`,
+ * `last-prompt`, `ai-title`, `file-history-snapshot`, ...). The parser
+ * rewrites `type` to `"unknown"` and keeps the original in `rawType`, so the
+ * union stays closed and `switch (entry.type)` narrows.
+ */
+export interface UnknownLogEntry extends BaseLogEntry {
+  type: "unknown";
+  rawType: string;
+}
+
+/**
  * Union of all log entry types
  */
 export type LogEntry =
@@ -160,4 +177,4 @@ export type LogEntry =
   | SummaryLogEntry
   | SystemLogEntry
   | QueueOperationLogEntry
-  | (BaseLogEntry & { type: string });
+  | UnknownLogEntry;

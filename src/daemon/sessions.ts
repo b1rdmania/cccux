@@ -122,6 +122,31 @@ export function isBackgroundSession(session: Session): boolean {
 }
 
 /**
+ * Whether a session should be surfaced to clients. Pane-tracked/native
+ * sessions are visible once they have a tmux pane; background
+ * (background-agent) sessions are paneless by nature and visible from
+ * creation (their `created` event IS their visible moment). Shared by the
+ * server's session lists and the tmux status bar so a count never names a
+ * session the picker hides.
+ */
+export function isVisibleSession(
+  s: Readonly<Pick<Session, "tmuxPane" | "trackingMode" | "logPath">>,
+): boolean {
+  return (
+    s.tmuxPane !== null ||
+    s.trackingMode === "background" ||
+    // Transcript-backed native sessions are visible even without a pane:
+    // when the binder refuses to guess (ambiguous
+    // evidence) the row must be VISIBLY unbound, not hidden — an unbound
+    // row self-corrects (marker arrival, rebind attempt) or is reaped by
+    // the zombie cleanup, and hiding it would just re-disguise the
+    // refusal as a missing session. Pane-tracked sessions keep the
+    // pane-gated promotion: their existence IS their pane.
+    (s.trackingMode === "native" && s.logPath !== null)
+  );
+}
+
+/**
  * Whether a cwd read out of a log entry may replace the session's current
  * one.
  *
@@ -232,6 +257,22 @@ export class SessionManager extends EventEmitter {
   private nativeSessionResolvedAt: Map<string, number> = new Map();
 
   /**
+   * Bumped on every real `attentionState` change, keyed by session id. Lets
+   * an async decision taken against one attention state (a finish verdict
+   * waiting on tmux) tell that an acknowledgment landed in the meantime,
+   * even one that came and decayed back to the same value. Not on `Session`
+   * because no client reads it.
+   */
+  private attentionRevisions: Map<string, number> = new Map();
+
+  /**
+   * Bumped on every `status` edge, keyed by session id: the edge identity
+   * for listeners that must see each transition exactly once. Unlike
+   * `statusChangedAt`, two edges in the same millisecond never share it.
+   */
+  private statusRevisions: Map<string, number> = new Map();
+
+  /**
    * Clear a pane-tracked session's per-run enrichment (status, activity,
    * log path, optionally native id). Used when the underlying process
    * changes so the row does not carry the previous run's identity — for
@@ -252,6 +293,11 @@ export class SessionManager extends EventEmitter {
 
     let changed = false;
 
+    // A reset is an edge with no previous status, so it outdates any finish
+    // of the previous run still being decided without reading as one.
+    if (session.status !== "idle" || session.statusChangedAt !== null) {
+      this.bumpStatusRevision(session.id);
+    }
     if (session.status !== "idle") {
       session.status = "idle";
       changed = true;
@@ -325,6 +371,13 @@ export class SessionManager extends EventEmitter {
    * directory name from a separator and turns `notes-cli` into `notes/cli`
    * (issue #156). Every caller that CAN know passes it, so the guess is the
    * last resort rather than the default.
+   *
+   * An id that already exists is returned untouched, with no event. Creating
+   * over it would swap a bound, possibly working session for a fresh unbound
+   * idle one and emit a second `created`, which the TUI used to append as a
+   * frozen duplicate row. Racing adds for one transcript did exactly that;
+   * the watcher re-checks before creating, and this keeps every other caller
+   * from doing it again.
    */
   createSession(
     sessionId: string,
@@ -332,6 +385,9 @@ export class SessionManager extends EventEmitter {
     agentType: string = "claude",
     knownCwd?: string | null,
   ): Session {
+    const existing = this.sessions.get(sessionId);
+    if (existing) return existing;
+
     const derived = extractProjectInfo(logPath);
     const cwd = knownCwd || derived.cwd;
     const project = knownCwd
@@ -538,6 +594,7 @@ export class SessionManager extends EventEmitter {
       session.previousStatus = session.status;
       session.statusChangedAt = new Date().toISOString();
       session.status = state.status!;
+      this.bumpStatusRevision(sessionId);
       changed = true;
     }
 
@@ -739,12 +796,28 @@ export class SessionManager extends EventEmitter {
     if (session.attentionState === attentionState) return false;
 
     session.attentionState = attentionState;
+    this.attentionRevisions.set(
+      sessionId,
+      this.getAttentionRevision(sessionId) + 1,
+    );
     if (attentionState === "read" || attentionState === null) {
       session.lastSeenAt = new Date().toISOString();
     }
     session.updatedAt = new Date();
     this.emit("change", { type: "updated", session } as SessionEvent);
     return true;
+  }
+
+  getAttentionRevision(sessionId: string): number {
+    return this.attentionRevisions.get(sessionId) ?? 0;
+  }
+
+  getStatusRevision(sessionId: string): number {
+    return this.statusRevisions.get(sessionId) ?? 0;
+  }
+
+  private bumpStatusRevision(sessionId: string): void {
+    this.statusRevisions.set(sessionId, this.getStatusRevision(sessionId) + 1);
   }
 
   /**
@@ -940,6 +1013,8 @@ export class SessionManager extends EventEmitter {
    */
   removeSession(sessionId: string): boolean {
     const existed = this.sessions.delete(sessionId);
+    this.attentionRevisions.delete(sessionId);
+    this.statusRevisions.delete(sessionId);
     if (existed) {
       this.emit("change", { type: "removed", sessionId } as SessionEvent);
     }

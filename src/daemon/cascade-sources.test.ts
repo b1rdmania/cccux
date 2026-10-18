@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test";
+import type { LogEntry } from "../types";
 import type { Session } from "../types/session";
+import { parseLogEntries } from "./parser";
+import { SessionManager } from "./sessions";
+import { deriveStateFromEntries } from "./status-machine";
 import {
+  evaluateCascade,
   genericMarkerSource,
   logSource,
   nativeLogSource,
@@ -494,5 +499,42 @@ describe("nativeLogSource", () => {
     const src = nativeLogSource(mkSession());
     expect(src.name).toBe("log");
     expect(src.canUpgrade).toBeUndefined();
+  });
+
+  it("a first turn's working log beats the marker's idle from before the prompt", () => {
+    const promptAt = "2026-05-17T10:00:00.000Z";
+    const prompt: LogEntry = {
+      type: "user",
+      uuid: "u1",
+      parentUuid: null,
+      timestamp: promptAt,
+      message: { role: "user", content: "Is 1000003 prime?" },
+    };
+    const metadata = parseLogEntries(
+      ["last-prompt", "mode", "permission-mode", "atis-latch", "ai-title"]
+        .map((type) =>
+          JSON.stringify({ type, uuid: `${type}-1`, parentUuid: null }),
+        )
+        .join("\n"),
+    );
+
+    const manager = new SessionManager();
+    manager.createSession("sess-1", "/x/sess-1.jsonl");
+    manager.updateSession(
+      "sess-1",
+      deriveStateFromEntries([prompt, ...metadata]),
+    );
+    const session = manager.getSession("sess-1")!;
+    expect(session.lastActivityAt).toBe(promptAt);
+
+    const sessionStartIdle = mkMarker({
+      state: "idle",
+      state_timestamp: Date.parse(promptAt) / 1000 - 30,
+    });
+    const result = evaluateCascade([
+      nativeMarkerSource(sessionStartIdle, session).source,
+      nativeLogSource(session),
+    ]);
+    expect(result.status).toBe("working");
   });
 });

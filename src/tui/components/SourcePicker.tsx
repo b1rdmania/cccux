@@ -46,6 +46,7 @@ import {
   type SourceRepo,
   type SourceRow,
 } from "./source-picker-rows";
+import { Text } from "./Text";
 
 /**
  * The source picker (issue #151): one filterable list of a repo's open pull
@@ -122,6 +123,7 @@ export interface SourcePickerProps {
    *  second agent into it. */
   onOpenWorktree: (target: {
     path: string;
+    sameRepoRegisteredRoots: readonly string[];
     cursor: string;
     filter: string;
   }) => void;
@@ -468,8 +470,16 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
       }
       const path = checkedOutPathFor(row, snapshot);
       const checkout = refreshed ? path : (path ?? row.checkedOutPath);
+      const sameRepoRegisteredRoots =
+        snapshot?.repos
+          .find((repo) => repo.repoRoot === row.repoRoot)
+          ?.worktrees.map((worktree) => worktree.path) ?? [];
       if (checkout) {
-        props.onOpenWorktree({ path: checkout, ...carry });
+        props.onOpenWorktree({
+          path: checkout,
+          sameRepoRegisteredRoots,
+          ...carry,
+        });
         return;
       }
       if (row.kind === "pr") {
@@ -677,7 +687,7 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
           backgroundColor={isCursor() ? theme.surface : undefined}
         >
           <For each={primarySegments(row, isCursor())}>
-            {(segment) => <text fg={segment.fg}>{segment.text}</text>}
+            {(segment) => <Text fg={segment.fg}>{segment.text}</Text>}
           </For>
         </box>
         <Show when={detail().length > 0}>
@@ -688,7 +698,7 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
             backgroundColor={isCursor() ? theme.surface : undefined}
           >
             <For each={detail()}>
-              {(segment) => <text fg={segment.fg}>{segment.text}</text>}
+              {(segment) => <Text fg={segment.fg}>{segment.text}</Text>}
             </For>
           </box>
         </Show>
@@ -711,9 +721,9 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
       paddingRight={1}
     >
       <box width="100%" height={1} flexDirection="row">
-        <text fg={theme.text} attributes={1}>
+        <Text fg={theme.text} attributes={1}>
           {title()}
-        </text>
+        </Text>
       </box>
 
       {/* Drawn only while filtering, in the session picker's own shape: the
@@ -722,9 +732,9 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
           the session picker teaches it too. */}
       <Show when={filtering()}>
         <box width="100%" height={1} flexDirection="row">
-          <text fg={theme.overlay} width={2}>
+          <Text fg={theme.overlay} width={2}>
             {"/ "}
-          </text>
+          </Text>
           <input
             value={filter()}
             onInput={(value: string) => {
@@ -737,6 +747,7 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
             placeholder="Filter pull requests and issues..."
             placeholderColor={theme.overlay}
             textColor={theme.text}
+            focusedTextColor={theme.text}
             cursorColor={theme.blue}
             backgroundColor="transparent"
             focusedBackgroundColor="transparent"
@@ -748,10 +759,10 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
       <box flexGrow={1} flexDirection="column">
         <Show when={phase() === "error"}>
           <box paddingTop={1} flexDirection="column">
-            <text fg={theme.red}>
+            <Text fg={theme.red}>
               {truncateText(error() ?? "", contentWidth())}
-            </text>
-            <text fg={theme.overlay}>r retry · q close</text>
+            </Text>
+            <Text fg={theme.overlay}>r retry · q close</Text>
           </box>
         </Show>
 
@@ -760,9 +771,9 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
             when={hasRows(visible())}
             fallback={
               <box paddingTop={1}>
-                <text fg={emptyState().fg}>
+                <Text fg={emptyState().fg}>
                   {truncateText(emptyState().text, contentWidth())}
-                </text>
+                </Text>
               </box>
             }
           >
@@ -780,22 +791,22 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
                   <box flexDirection="column">
                     <Show when={repoHeaders()}>
                       <box height={1} width="100%">
-                        <text fg={theme.mauve} attributes={1}>
+                        <Text fg={theme.mauve} attributes={1}>
                           {truncateText(repo.repoName, listWidth())}
-                        </text>
+                        </Text>
                       </box>
                     </Show>
                     <box height={1} width="100%">
-                      <text fg={theme.overlay}>
+                      <Text fg={theme.overlay}>
                         {truncateText(
                           sectionText(PRS_SECTION, repo.prSection, spinner()),
                           listWidth(),
                         )}
-                      </text>
+                      </Text>
                     </box>
                     <For each={repo.prs}>{renderRow}</For>
                     <box height={1} width="100%">
-                      <text fg={theme.overlay}>
+                      <Text fg={theme.overlay}>
                         {truncateText(
                           sectionText(
                             ISSUES_SECTION,
@@ -804,7 +815,7 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
                           ),
                           listWidth(),
                         )}
-                      </text>
+                      </Text>
                     </box>
                     <For each={repo.issues}>{renderRow}</For>
                   </box>
@@ -816,9 +827,9 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
       </box>
 
       <box width="100%" height={1} flexDirection="row">
-        <text fg={note() ? theme.yellow : theme.overlay}>
+        <Text fg={note() ? theme.yellow : theme.overlay}>
           {truncateText(note() ?? hints(), contentWidth())}
-        </text>
+        </Text>
       </box>
     </box>
   );

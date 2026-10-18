@@ -130,6 +130,7 @@ import { createFlashScheduler } from "./utils/pane-flash";
 import { createIdleGcScheduler } from "./utils/idle-gc";
 import { setSpinnerPaused } from "./utils/useStatusIcon";
 import { markStartup, reportStartup } from "../lib/startup-timing";
+import { Text } from "./components/Text";
 
 /** Long enough to read a sentence that sends the user to the README. The
  *  shared-session refusal is the only place a user hears that a popup on a
@@ -686,18 +687,18 @@ export function App(props: AppProps) {
    * decision is re-made HERE rather than in the panel because this is where
    * the live store is; the panel reports what it saw and this picks the verb.
    *
-   * Only the linked-worktree case is revalidated. The main checkout's Enter
-   * opens an ordinary dialog whose destination is still a real choice, so an
-   * agent living there is no reason to refuse — and a containment test against
-   * a repo ROOT would match every linked worktree too, since ccmux puts them
-   * under `<repo>/.claude/worktrees/`. Prefix-matching there would jump to an
-   * unrelated worktree's agent.
+   * The main checkout still opens an ordinary dialog whose destination is a
+   * real choice. When revalidating any existing destination, the registered
+   * same-repo roots identify the deepest checkout containing each session;
+   * this prevents a parent checkout, including one holding a PR, from
+   * claiming a live agent in a nested worktree at any configured path.
    */
   function spawnInWorktree(target: {
     cwd: string;
     existingWorktree: string | null;
     panelRepo: string | null;
     panelScope: string | null;
+    sameRepoRegisteredRoots: readonly string[];
     /**
      * The row's own KEY, where it is not simply the worktree's path.
      *
@@ -720,7 +721,11 @@ export function App(props: AppProps) {
     const worktree = target.existingWorktree;
     if (worktree) {
       const live = store.state.sessions.find((session) =>
-        worktreeHoldsPath(worktree, sessionCwd(session)),
+        worktreeHoldsPath(
+          worktree,
+          sessionCwd(session),
+          target.sameRepoRegisteredRoots,
+        ),
       );
       if (live) {
         activateSession(live);
@@ -857,13 +862,18 @@ export function App(props: AppProps) {
    */
   function openWorktreeFromSources(target: {
     path: string;
+    sameRepoRegisteredRoots: readonly string[];
     cursor: string;
     filter: string;
   }) {
     const marker = sourcesReturn({ repoRoot: target.path, ...target });
     store.actions.hideSourcePicker();
     const live = store.state.sessions.find((session) =>
-      worktreeHoldsPath(target.path, sessionCwd(session)),
+      worktreeHoldsPath(
+        target.path,
+        sessionCwd(session),
+        target.sameRepoRegisteredRoots,
+      ),
     );
     if (live) {
       activateSession(live);
@@ -1427,7 +1437,11 @@ export function App(props: AppProps) {
       .flatItems()
       .find((item) => item.type === "header" && item.groupKey === cm.groupKey);
     store.actions.hideGroupContextMenu();
-    if (!header || header.type !== "header" || isSyntheticGroupKey(header.groupKey))
+    if (
+      !header ||
+      header.type !== "header" ||
+      isSyntheticGroupKey(header.groupKey)
+    )
       return;
     const repo =
       header.members
@@ -2183,7 +2197,7 @@ export function App(props: AppProps) {
   function groupMenuItems(): ContextMenuItem[] {
     const cm = store.state.groupContextMenu;
     const isCollapsed = cm ? store.collapsedGroups().has(cm.groupKey) : false;
-    const items: ContextMenuItem[] = [
+    return [
       {
         // One id for both labels: it is one action whose name reflects the
         // group's current state, and a highlight must not drop off it because
@@ -2230,17 +2244,6 @@ export function App(props: AppProps) {
         action: groupContextMenuKill,
       },
     ];
-    return cm && isSyntheticGroupKey(cm.groupKey)
-      ? items.filter(
-          (item) =>
-            item.id !== "kill-group" &&
-            item.id !== "new-session" &&
-            item.id !== "worktrees" &&
-            item.id !== "collapse" &&
-            item.id !== "pin-top" &&
-            item.id !== "pin-bottom",
-        )
-      : items;
   }
 
   /** Kill a normal session, but cancel an invoke-driven row cleanly
@@ -4127,18 +4130,18 @@ export function App(props: AppProps) {
         <Show when={handoffSource()}>
           {(from: () => EnrichedSession) => (
             <box paddingLeft={1} height={1}>
-              <text fg={theme.mauve}>
+              <Text fg={theme.mauve}>
                 {props.sidebar
                   ? `${HANDOFF_BADGE} pick target · enter · esc`
                   : `${HANDOFF_BADGE} Hand off from ${from().tmuxTarget ?? handoffLabel(from())} · pick a target`}
-              </text>
+              </Text>
             </box>
           )}
         </Show>
 
         <Show when={store.state.error}>
           <box paddingLeft={1} height={1}>
-            <text fg={theme.red}>Error: {store.state.error}</text>
+            <Text fg={theme.red}>Error: {store.state.error}</Text>
           </box>
         </Show>
 

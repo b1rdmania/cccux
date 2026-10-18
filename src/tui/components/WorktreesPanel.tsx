@@ -13,6 +13,7 @@ import type { KeyEvent, ScrollBoxRenderable } from "@opentui/core";
 import { MouseButton } from "@opentui/core";
 import { basename, resolve, sep } from "node:path";
 import { getDaemonUrl } from "../../lib/config";
+import { normalizePath } from "../../daemon/worktree-git";
 import type {
   PRState,
   PruneCandidate,
@@ -59,6 +60,7 @@ import { useStatusIcon } from "../utils/useStatusIcon";
 import { useSharedTerminalDimensions } from "../utils/use-shared-dimensions";
 import type { IconStyle } from "../../lib/icons";
 import { theme } from "../theme";
+import { Text } from "./Text";
 
 /**
  * The picker's Worktrees surface (issue #102), which grew out of the
@@ -329,6 +331,9 @@ interface WorktreesPanelProps {
     existingWorktree: string | null;
     panelRepo: string | null;
     panelScope: string | null;
+    /** Registered paths from this destination's repo, used to resolve
+     *  ownership when one checkout is nested inside another. */
+    sameRepoRegisteredRoots: readonly string[];
     /**
      * The row's KEY, when it is not the worktree path App would infer.
      *
@@ -418,62 +423,40 @@ export function partitionSelection(
 }
 
 /**
- * Whether `candidate` is the worktree at `worktreePath` or a directory inside
- * it.
+ * Whether `candidate` belongs to `worktreePath`, rather than a registered
+ * checkout nested below it. A session may `cd` anywhere inside its checkout,
+ * so containment includes the root itself and descendant directories.
  *
- * The panel's rows carry the sessions the daemon reported when the list was
- * FETCHED, and Enter acts seconds later. Re-deciding "is this worktree
- * occupied" at Enter time means asking the live session list, and a session's
- * directory is only a path — an agent that has `cd`-ed into a subdirectory is
- * still in that worktree, so this is a prefix test and not equality.
+ * The separator is part of the prefix: `/wt/feature-two` is a sibling, not
+ * a child of `/wt/feature`. Registered paths are supplied by the worktree
+ * snapshot for this same repo. The deepest registered root containing the
+ * candidate owns it, regardless of where the layout placed that checkout.
+ * Unregistered descendants remain part of the containing worktree.
  *
- * The separator is part of the prefix on purpose: a plain `startsWith` makes
- * `/wt/feature-two` look like it lives inside `/wt/feature`.
- *
- * A descendant that crosses into a NESTED checkout is not held: ccmux's own
- * worktrees live under the main checkout at `.claude/worktrees/<name>`, so a
- * main checkout on a PR's head would otherwise claim a session working in a
- * different branch. The boundary is the path convention rather than an fs
- * walk for `.git` files, so one nested by hand elsewhere stays claimable.
- *
- * Compares resolved paths, not real ones. Both sides come from the same
- * daemon (git's worktree list and the pane scan), so they agree in practice;
- * a symlinked checkout reached by two different absolute paths would not
- * match, and would fall through to the spawn dialog.
+ * Canonicalize existing paths so symlinked pane/session directories compare
+ * with Git's real paths. Missing paths retain lexical resolution.
  */
 export function worktreeHoldsPath(
   worktreePath: string,
   candidate: string,
+  sameRepoRegisteredRoots: readonly string[],
 ): boolean {
   if (!candidate) return false;
-  const root = resolve(worktreePath);
-  const path = resolve(candidate);
-  if (path === root) return true;
-  if (!path.startsWith(root + sep)) return false;
-  return !crossesNestedCheckout(path.slice(root.length + sep.length));
-}
+  const root = resolve(normalizePath(worktreePath));
+  const path = resolve(normalizePath(candidate));
+  if (path !== root && !path.startsWith(root + sep)) return false;
 
-/**
- * The parent every nested checkout lives under, as SEGMENTS. Restated from
- * the `**\/.claude/worktrees/` `ensureWorktreesExcluded` writes, which the
- * TUI cannot import without dragging daemon dependencies along.
- */
-const NESTED_CHECKOUT_SEGMENTS = [".claude", "worktrees"];
-
-/** Whether a root's descendant passes through one: the two segments
- *  consecutive at any depth, with something BEYOND them, since the container
- *  itself belongs to the tree that holds it. */
-function crossesNestedCheckout(relative: string): boolean {
-  const segments = relative.split(sep);
-  for (let i = 0; i + 2 < segments.length; i += 1) {
+  let deepest = root;
+  for (const registered of sameRepoRegisteredRoots) {
+    const registeredRoot = resolve(normalizePath(registered));
     if (
-      segments[i] === NESTED_CHECKOUT_SEGMENTS[0] &&
-      segments[i + 1] === NESTED_CHECKOUT_SEGMENTS[1]
+      registeredRoot.length > deepest.length &&
+      (path === registeredRoot || path.startsWith(registeredRoot + sep))
     ) {
-      return true;
+      deepest = registeredRoot;
     }
   }
-  return false;
+  return deepest === root;
 }
 
 /**
@@ -1701,18 +1684,18 @@ const RemovalConfirm: Component<{
       justifyContent="center"
       alignItems="center"
     >
-      <text fg={theme.text}>
+      <Text fg={theme.text}>
         <strong>Remove worktrees?</strong>
-      </text>
+      </Text>
       <box height={1} />
       {/* Red only when uncommitted work is actually going, so the one
           irreversible case does not read like the routine one. */}
-      <text fg={props.destructive ? theme.red : theme.subtext}>
+      <Text fg={props.destructive ? theme.red : theme.subtext}>
         {truncateText(props.headline, boxWidth() - 2)}
-      </text>
+      </Text>
       <For each={props.details}>
         {(line) => (
-          <text fg={theme.overlay}>{truncateText(line, boxWidth() - 2)}</text>
+          <Text fg={theme.overlay}>{truncateText(line, boxWidth() - 2)}</Text>
         )}
       </For>
       <box height={1} />
@@ -1723,10 +1706,10 @@ const RemovalConfirm: Component<{
             if (event.button === MouseButton.LEFT) props.onConfirm();
           }}
         >
-          <text fg={theme.green}>
+          <Text fg={theme.green}>
             <strong>Y</strong>
-          </text>
-          <text fg={theme.overlay}> confirm </text>
+          </Text>
+          <Text fg={theme.overlay}> confirm </Text>
         </box>
         <box
           flexDirection="row"
@@ -1734,10 +1717,10 @@ const RemovalConfirm: Component<{
             if (event.button === MouseButton.LEFT) props.onCancel();
           }}
         >
-          <text fg={theme.red}>
+          <Text fg={theme.red}>
             <strong>N</strong>
-          </text>
-          <text fg={theme.overlay}> cancel</text>
+          </Text>
+          <Text fg={theme.overlay}> cancel</Text>
         </box>
       </box>
     </box>
@@ -2833,6 +2816,14 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
    * directory to itself, because a second session in the same worktree is
    * deliberately not a thing this panel offers.
    */
+  function registeredPaths(repoRoot: string): string[] {
+    return (
+      repos()
+        .find((repo) => repo.repoRoot === repoRoot)
+        ?.worktrees.map((row) => row.path) ?? []
+    );
+  }
+
   function activateRow(entry: PanelRow): void {
     const origin = { panelRepo: props.repo, panelScope: repoFilter() };
     if (entry.kind === "pr") {
@@ -2844,6 +2835,7 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
         props.onSpawn({
           cwd: entry.checkedOutPath,
           existingWorktree: entry.checkedOutPath,
+          sameRepoRegisteredRoots: registeredPaths(entry.repoRoot),
           // The PR row's own key, not the worktree's path. The destination
           // is the worktree; the ROW is this PR, and a cancelled dialog has
           // to come back to it — in the PR view, which `initialView` derives
@@ -2882,11 +2874,12 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
     // The opening repo AND the live filter travel with the action: Tab's
     // rescope is panel-local, so a return that read the store instead would
     // land on the narrow view the user had already widened away from.
-    props.onSpawn(
-      entry.row.isMain
-        ? { cwd: entry.row.repoRoot, existingWorktree: null, ...origin }
-        : { cwd: entry.row.path, existingWorktree: entry.row.path, ...origin },
-    );
+    props.onSpawn({
+      cwd: entry.row.isMain ? entry.row.repoRoot : entry.row.path,
+      existingWorktree: entry.row.isMain ? null : entry.row.path,
+      sameRepoRegisteredRoots: registeredPaths(entry.row.repoRoot),
+      ...origin,
+    });
   }
 
   function copyPath(path: string): void {
@@ -3357,13 +3350,13 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
                 // The scope leads, in the panel's brightest ink: it is the
                 // subject the chips beside it are two views OF.
                 return (
-                  <text fg={theme.text}>
+                  <Text fg={theme.text}>
                     <strong>{part.text}</strong>
-                  </text>
+                  </Text>
                 );
               }
               if (part.kind === "text") {
-                return <text fg={theme.overlay}>{part.text}</text>;
+                return <Text fg={theme.overlay}>{part.text}</Text>;
               }
               const tab = part.tab;
               return (
@@ -3393,7 +3386,7 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
                 >
                   <For each={tab.segments}>
                     {(segment: RowSegment) => (
-                      <text
+                      <Text
                         fg={
                           !tab.active && hoveredTab() === tab.view
                             ? theme.subtext
@@ -3401,7 +3394,7 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
                         }
                       >
                         {segment.text}
-                      </text>
+                      </Text>
                     )}
                   </For>
                 </box>
@@ -3417,16 +3410,16 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
       <box flexGrow={1} flexDirection="column">
         <Show when={phase() === "loading"}>
           <box paddingTop={1}>
-            <text fg={theme.subtext}>Reading worktrees...</text>
+            <Text fg={theme.subtext}>Reading worktrees...</Text>
           </box>
         </Show>
 
         <Show when={phase() === "error"}>
           <box paddingTop={1} flexDirection="column">
-            <text fg={theme.red}>
+            <Text fg={theme.red}>
               {truncateText(error() ?? "", contentWidth())}
-            </text>
-            <text fg={theme.overlay}>r retry · q close</text>
+            </Text>
+            <Text fg={theme.overlay}>r retry · q close</Text>
           </box>
         </Show>
 
@@ -3435,9 +3428,9 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
             when={hasContent()}
             fallback={
               <box paddingTop={1}>
-                <text fg={emptyState().fg}>
+                <Text fg={emptyState().fg}>
                   {truncateText(emptyState().text, contentWidth())}
-                </text>
+                </Text>
               </box>
             }
           >
@@ -3535,10 +3528,10 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
                             the bar's own cell shows half a cell of surface
                             poking out LEFT of the stroke. */}
                         <box height={1} width="100%" flexDirection="row">
-                          <text> </text>
-                          <text fg={isCursor() ? theme.mauve : theme.overlay}>
+                          <Text> </Text>
+                          <Text fg={isCursor() ? theme.mauve : theme.overlay}>
                             {isCursor() ? CURSOR_BAR : RAIL}
-                          </text>
+                          </Text>
                           <box
                             flexGrow={1}
                             height={1}
@@ -3547,7 +3540,7 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
                               isCursor() ? theme.surface : undefined
                             }
                           >
-                            <text> </text>
+                            <Text> </Text>
                             <For
                               each={fitSegments(
                                 primarySegments(entry, {
@@ -3561,14 +3554,14 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
                               )}
                             >
                               {(segment) => (
-                                <text fg={segment.fg}>{segment.text}</text>
+                                <Text fg={segment.fg}>{segment.text}</Text>
                               )}
                             </For>
                           </box>
                         </box>
                         <Show when={detail().length > 0}>
                           <box height={1} width="100%" flexDirection="row">
-                            <text> </text>
+                            <Text> </Text>
                             {/* A detail line always hangs off its own line
                                 1, so it always carries the rail, and it
                                 indents to whatever marker that line 1 used.
@@ -3576,9 +3569,9 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
                                 two-line cursor row wears the bar on both
                                 lines — and, as on line 1, the highlight
                                 starts on the column after it. */}
-                            <text fg={isCursor() ? theme.mauve : theme.overlay}>
+                            <Text fg={isCursor() ? theme.mauve : theme.overlay}>
                               {isCursor() ? CURSOR_BAR : RAIL}
-                            </text>
+                            </Text>
                             <box
                               flexGrow={1}
                               height={1}
@@ -3587,9 +3580,9 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
                                 isCursor() ? theme.surface : undefined
                               }
                             >
-                              <text fg={theme.overlay}>
+                              <Text fg={theme.overlay}>
                                 {` ${" ".repeat(markerWidth(hasCheckbox))}`}
-                              </text>
+                              </Text>
                               <For
                                 each={fitSegments(
                                   detail(),
@@ -3597,7 +3590,7 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
                                 )}
                               >
                                 {(segment) => (
-                                  <text fg={segment.fg}>{segment.text}</text>
+                                  <Text fg={segment.fg}>{segment.text}</Text>
                                 )}
                               </For>
                             </box>
@@ -3620,16 +3613,16 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
                     <box flexDirection="column">
                       <Show when={showsGroupHeaders(merged())}>
                         <box height={1} flexDirection="row">
-                          <text fg={theme.mauve}>
+                          <Text fg={theme.mauve}>
                             <strong>{headerName()}</strong>
-                          </text>
+                          </Text>
                           {/* The rule is what makes the boundary scannable
                               on a tall multi-repo list without spending a
                               blank line on it; muted so the bold name stays
                               the loudest thing on the line. */}
-                          <text fg={theme.overlay}>
+                          <Text fg={theme.overlay}>
                             {headerRule(headerName(), listWidth())}
-                          </text>
+                          </Text>
                         </box>
                       </Show>
                       {/* One group, two views. The repo header above is
@@ -3648,13 +3641,13 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
                                 it. */}
                             <Show when={split().removable.length > 0}>
                               <box height={1} flexDirection="row">
-                                <text fg={theme.overlay}> </text>
-                                <text fg={theme.overlay}>
+                                <Text fg={theme.overlay}> </Text>
+                                <Text fg={theme.overlay}>
                                   {dividerText(
                                     split().removable.length,
                                     listWidth() - 1,
                                   )}
-                                </text>
+                                </Text>
                               </box>
                             </Show>
                             <For each={split().removable}>
@@ -3687,19 +3680,19 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
               tail exists to replace. */}
           <Show when={scanError()}>
             <box height={1}>
-              <text fg={theme.yellow}>
+              <Text fg={theme.yellow}>
                 {truncateText(
                   `Prune scan failed: ${scanError()}`,
                   contentWidth(),
                 )}
-              </text>
+              </Text>
             </box>
           </Show>
         </Show>
 
         <Show when={phase() === "running"}>
           <box paddingTop={1}>
-            <text fg={theme.peach}>Pruning...</text>
+            <Text fg={theme.peach}>Pruning...</Text>
           </box>
         </Show>
 
@@ -3712,16 +3705,16 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
               {(outcome) => (
                 <box flexDirection="column">
                   <box height={1}>
-                    <text fg={outcome.removed ? theme.green : theme.red}>
+                    <Text fg={outcome.removed ? theme.green : theme.red}>
                       {`${outcome.removed ? "✓" : "✗"} ${outcome.path}`}
-                    </text>
+                    </Text>
                   </box>
                   <For each={outcome.steps}>
                     {(step) => (
                       <box height={1} paddingLeft={4}>
-                        <text fg={step.ok ? theme.subtext : theme.red}>
+                        <Text fg={step.ok ? theme.subtext : theme.red}>
                           {`${step.step}: ${step.detail}`}
-                        </text>
+                        </Text>
                       </box>
                     )}
                   </For>
@@ -3739,20 +3732,20 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
             fallback={
               // Dimmed but present while the confirm owns the keyboard: the
               // keys are still the panel's, they are just not answerable yet.
-              <text fg={phase() === "confirm" ? theme.surface : theme.overlay}>
+              <Text fg={phase() === "confirm" ? theme.surface : theme.overlay}>
                 {hintLine()}
-              </text>
+              </Text>
             }
           >
             {(message: () => string) => (
-              <text fg={theme.green}>
+              <Text fg={theme.green}>
                 {truncateText(message(), contentWidth())}
-              </text>
+              </Text>
             )}
           </Show>
         </Show>
         <Show when={phase() === "done"}>
-          <text fg={theme.overlay}>j/k scroll · r reload · q close</text>
+          <Text fg={theme.overlay}>j/k scroll · r reload · q close</Text>
         </Show>
       </box>
       <Show when={phase() === "confirm"}>
