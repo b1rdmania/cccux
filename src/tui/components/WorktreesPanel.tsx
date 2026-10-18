@@ -71,6 +71,8 @@ import { useStatusIcon } from "../utils/useStatusIcon";
 
 import { useSharedTerminalDimensions } from "../utils/use-shared-dimensions";
 
+import { syncScrollbarThumb } from "../utils/scrollbar-thumb";
+
 import type { IconStyle } from "../../lib/icons";
 
 import { theme } from "../theme";
@@ -1262,7 +1264,13 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
           <Text fg={theme.yellow}>Removing worktrees…</Text>
         </Show>
         <Show when={phase() === "done"}>
-          <scrollbox flexGrow={1} ref={resultsBox}>
+          <scrollbox
+            flexGrow={1}
+            ref={(r: ScrollBoxRenderable) => {
+              resultsBox = r;
+              syncScrollbarThumb(r);
+            }}
+          >
             <For each={result()?.outcomes ?? []}>
               {(outcome) => (
                 <box flexDirection="column" flexShrink={0}>
@@ -1296,6 +1304,7 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
             flexGrow={1}
             ref={(r: ScrollBoxRenderable) => {
               listBox = r;
+              syncScrollbarThumb(r);
               const bump = () => setMeasured((v) => v + 1);
               r.viewport.on("resize", bump);
               r.content.on("resize", bump);
