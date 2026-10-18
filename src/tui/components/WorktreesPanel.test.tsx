@@ -1098,3 +1098,53 @@ describe("Worktrees removal outcomes and cache", () => {
     expect(h.posts).toEqual([]);
   });
 });
+
+describe("Worktrees scrollbar thumb", () => {
+  const width = 120;
+  const many = (n: number) => [
+    mainRow(),
+    ...Array.from({ length: n - 1 }, (_, i) =>
+      row({ path: `/repo/wt/r${i}`, name: `r${i}`, branch: `feat/r${i}` }),
+    ),
+  ];
+  // Half-cells, the unit the slider sizes its thumb in.
+  const thumb = (frame: string) =>
+    frame
+      .split("\n")
+      .map((line) => [...line][width - 2])
+      .reduce(
+        (n, c) => n + (c === "█" ? 2 : c === "▀" || c === "▄" ? 1 : 0),
+        0,
+      );
+  it("sizes to viewport over content on first render", async () => {
+    const h = await mount({
+      rows: many(61),
+      width,
+      height: 40,
+      embedded: true,
+    });
+    // 62 lines (header + 61 rows) in a 38-line viewport: 76 * 38 / 62 = 46.
+    // The pinned slider drew 3; OpenTUI's clamp alone draws 38 (half).
+    expect(thumb(await h.frame())).toBe(46);
+  });
+  it("resizes when the list grows from fitting and when it shrinks", async () => {
+    let rows = many(10);
+    const h = await mount({
+      width,
+      height: 40,
+      embedded: true,
+      list: async () => listResponse(rows),
+    });
+    expect(await h.frame()).toContain("r8 +");
+    expect(thumb(await h.frame())).toBe(0);
+    rows = many(61);
+    await h.keys.pressKey("R");
+    await h.frame();
+    expect(thumb(await h.frame())).toBe(46);
+    rows = many(45);
+    await h.keys.pressKey("R");
+    await h.frame();
+    // 76 * 38 / 46 = 62, where the clamp would again draw 38.
+    expect(thumb(await h.frame())).toBe(62);
+  });
+});
