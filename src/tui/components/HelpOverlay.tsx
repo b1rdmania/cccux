@@ -4,6 +4,7 @@ import type { Component, JSX, ParentComponent } from "solid-js";
 import { createMemo } from "solid-js";
 import { theme } from "../theme";
 import { useSharedTerminalDimensions } from "../utils/use-shared-dimensions";
+import { syncScrollbarThumb } from "../utils/scrollbar-thumb";
 import { truncateText, wrapText } from "../utils/format";
 import { Text } from "./Text";
 
@@ -125,7 +126,10 @@ const HelpLayout: ParentComponent<{
 
     <scrollbox
       flexGrow={1}
-      ref={(r: ScrollBoxRenderable) => props.onScrollboxRef?.(r)}
+      ref={(r: ScrollBoxRenderable) => {
+        syncScrollbarThumb(r);
+        props.onScrollboxRef?.(r);
+      }}
     >
       {props.children}
     </scrollbox>
