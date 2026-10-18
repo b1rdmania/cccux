@@ -1,3 +1,4 @@
+import type { WorktreeConfig } from "./worktree-layout";
 import { mkdirSync, readFileSync } from "fs";
 import { dirname } from "path";
 import { PREFS_FILE } from "./config";
@@ -96,6 +97,9 @@ export interface AgentConfig {
    * regex (string form, parsed like `readyPattern`) matching reply text the
    * delivery path must refuse for this agent (composer triggers a leading
    * space cannot defuse; see `AgentDef.notificationActions`).
+   * `approvalKeysVerifiedThroughMajor` is the newest major version the
+   * `approve`/`deny` keys are known to be safe on; like `unsafeReplyPattern`
+   * it carries over from the built-in when an override omits it.
    */
   notificationActions?: {
     approve?: string[];
@@ -108,6 +112,7 @@ export interface AgentConfig {
     replyOnQuestion?: boolean;
     replyOnFinished?: boolean;
     unsafeReplyPattern?: string;
+    approvalKeysVerifiedThroughMajor?: number;
   };
   /**
    * Set when this custom agent's permission marker can actually cover an
@@ -241,6 +246,29 @@ export interface NotificationsConfig {
   command?: string;
 }
 
+export interface StatusBarConfig {
+  /** Default true; false disables publishing. Settings require a daemon restart. */
+  enabled?: boolean;
+  /** Override the shared iconStyle glyphs (dot defaults: ■ / ●). */
+  waitingIcon?: string;
+  unreadIcon?: string;
+  /** tmux foreground colors (defaults red / green); empty inherits the surrounding style. */
+  waitingColor?: string;
+  unreadColor?: string;
+}
+
+export function isStatusBarIcon(value: unknown): value is string {
+  return typeof value === "string" && !/[#\x00-\x1f\x7f]/.test(value);
+}
+
+export function isStatusBarColor(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  if (/^colour\d+$/.test(value)) return Number(value.slice(6)) <= 255;
+  return /^(?:|#[0-9a-fA-F]{6}|default|gr[ae]y|(?:bright)?(?:black|red|green|yellow|blue|magenta|cyan|white))$/.test(
+    value,
+  );
+}
+
 export const DEFAULT_BREAKPOINTS: Required<BreakpointConfig> = {
   xs: 40,
   sm: 60,
@@ -353,6 +381,8 @@ export interface Preferences {
    * may start with `~`. See `resolveClaudeProjectDirs`.
    */
   additionalClaudeConfigDirs?: string[];
+  /** Worktree directory path template; branch names are unaffected. */
+  worktree?: WorktreeConfig;
   columns?: ColumnsConfig;
   breakpoints?: BreakpointConfig;
   /** Default prompt display mode (default "inline"). The runtime `p`-key
@@ -393,6 +423,8 @@ export interface Preferences {
   sidebar?: SidebarConfig;
   /** Desktop notification settings (default: disabled). See {@link NotificationsConfig}. */
   notifications?: NotificationsConfig;
+  /** Publish session counts and attention marks as tmux user options. */
+  statusBar?: StatusBarConfig;
   /**
    * The tmux server ccmux tracks: a socket path (leading "/", passed as `-S`)
    * or a socket label (anything else, passed as `-L`). Unset means today's

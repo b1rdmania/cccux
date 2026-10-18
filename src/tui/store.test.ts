@@ -1,4 +1,5 @@
-import { describe, it, expect, mock } from "bun:test";
+import { describe, it, expect, mock, beforeEach, afterEach, spyOn } from "bun:test";
+import { createRoot } from "solid-js";
 import {
   getGroupKey,
   NEEDS_YOU_GROUP_KEY,
@@ -38,10 +39,30 @@ function headerLabels(items: FlatItem[]): string[] {
     .map((h) => h.label);
 }
 
-/** Wrap createTUIStore with a no-op persist to avoid writing state.json in tests */
+const storeDisposers: Array<() => void> = [];
+let restoreFetch: () => void;
+
+beforeEach(() => {
+  // The store also broadcasts selections over HTTP, independently of file
+  // persistence. Never let fixtures become the live daemon's sidebar state.
+  const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(async () => Response.json({}), { preconnect: () => {} }),
+  );
+  restoreFetch = () => fetchSpy.mockRestore();
+});
+
+afterEach(() => {
+  for (const dispose of storeDisposers.splice(0)) dispose();
+  restoreFetch();
+});
+
+/** Own each store's timers and suppress state.json writes. */
 const noop = () => {};
 function createTUIStore(options: Parameters<typeof _createTUIStore>[0] = {}) {
-  return _createTUIStore({ onPersistState: noop, ...options });
+  return createRoot((dispose) => {
+    storeDisposers.push(dispose);
+    return _createTUIStore({ onPersistState: noop, ...options });
+  });
 }
 
 const createMockSession = mockEnrichedSession;
@@ -1454,6 +1475,31 @@ describe("store", () => {
 
       expect(store.state.sessions).toHaveLength(1);
       expect(store.state.sessions[0].id).toBe("s1");
+    });
+
+    // A second `session_created` for one id used to append a copy that
+    // updateSession (first match only) never reached: a frozen ghost row.
+    it("replaces the row when the same session is created twice", () => {
+      const store = createTUIStore({ groupBy: "none" });
+      const first = createMockSession({
+        id: "s1",
+        status: "idle",
+        tmuxPane: null,
+        pendingHandoff: {
+          fromSessionId: "peer",
+          queuedAt: "2024-01-15T12:00:00Z",
+        },
+      });
+      store.actions.addSession(first);
+
+      const { pendingHandoff: _, ...newer } = first;
+      store.actions.addSession({ ...newer, status: "working", tmuxPane: "%1" });
+
+      expect(store.state.sessions).toHaveLength(1);
+      expect(store.state.sessions[0].status).toBe("working");
+      expect(store.state.sessions[0].tmuxPane).toBe("%1");
+      // Replaced like updateSession does, not merged: an omitted key is gone.
+      expect(store.state.sessions[0].pendingHandoff).toBeUndefined();
     });
 
     it("should fall back to first filtered session when selectedSessionId is null", () => {
@@ -4915,7 +4961,7 @@ describe("search over the agent's summary", () => {
   });
 
   it("finds nothing in the pane title of an agent with no rule", () => {
-    // codex writes its cwd basename there; the `project` column already
+    // pi writes its cwd basename there; the `project` column already
     // carries that, and matching it would make the query mean two things.
     // The daemon ships `summary: null` for it, and the raw title is not a
     // search field.
@@ -4923,17 +4969,17 @@ describe("search over the agent's summary", () => {
     store.actions.setSessions([
       createMockSession({
         id: "s1",
-        agentType: "codex",
+        agentType: "pi",
         project: "proj",
         gitBranch: null,
-        paneTitle: "probe-codex-x7",
+        paneTitle: "π - probe-pi-z3",
         summary: null,
         lastPrompt: null,
         prompts: [],
       }),
     ]);
 
-    store.actions.setSearchQuery("probe-codex");
+    store.actions.setSearchQuery("probe-pi");
     expect(store.filteredSessions()).toHaveLength(0);
   });
 
@@ -5059,5 +5105,27 @@ describe("attention band off", () => {
     store.actions.setSessions(sessions());
     store.actions.showGroupKillDialog("alpha");
     expect([...store.state.confirmSessionIds].sort()).toEqual(["a", "w"]);
+  });
+
+  it("leaves a collapsed group collapsed when its selected wait ends", async () => {
+    // Launch selection picks the active pane's session even inside a
+    // collapsed group. The row never left that group, so nothing expands.
+    const persisted: Record<string, unknown>[] = [];
+    const store = createTUIStore({
+      groupBy: "project",
+      attentionBand: false,
+      collapsedGroups: ["alpha"],
+      onPersistState: (updates) => {
+        persisted.push(updates);
+      },
+    });
+    const initial = sessions();
+    store.actions.setSessions(initial);
+    store.actions.setSelectedSessionId("w");
+    store.actions.updateSession({ ...initial[1]!, status: "idle" });
+    await waitForDebounce();
+    expect(store.collapsedGroups().has("alpha")).toBe(true);
+    expect(store.state.selectedSessionId).toBe("w");
+    expect(persisted.some((u) => "collapsedGroups" in u)).toBe(false);
   });
 });

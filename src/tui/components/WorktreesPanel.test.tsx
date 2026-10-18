@@ -4,6 +4,15 @@ import type { RepoFactsResponse } from "../../daemon/repo-facts";
 import { testRender } from "@opentui/solid";
 import { createMockKeys } from "@opentui/core/testing";
 import { deliverEscape } from "./test-helpers";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { WorktreeRow } from "../../daemon/worktree-list";
 import type {
   PruneCandidate,
@@ -98,88 +107,87 @@ function candidate(overrides: Partial<PruneCandidate> = {}): PruneCandidate {
 }
 
 describe("worktreeHoldsPath", () => {
-  it("holds the worktree root itself", () => {
-    expect(worktreeHoldsPath("/repo/wt/feature", "/repo/wt/feature")).toBe(
-      true,
+  it("treats symlink aliases of candidates, targets, and registered children as the same checkout", () => {
+    const directory = realpathSync(
+      mkdtempSync(join(tmpdir(), "ccmux-owner-alias-")),
     );
+    const parent = join(directory, "repo");
+    const child = join(parent, ".worktrees", "child");
+    const alias = join(directory, "alias");
+    mkdirSync(join(child, "src"), { recursive: true });
+    symlinkSync(parent, alias, "dir");
+    const childAlias = join(alias, ".worktrees", "child");
+    try {
+      expect(
+        worktreeHoldsPath(child, join(childAlias, "src"), [parent, child]),
+      ).toBe(true);
+      expect(
+        worktreeHoldsPath(childAlias, join(child, "src"), [parent, child]),
+      ).toBe(true);
+      expect(
+        worktreeHoldsPath(parent, join(child, "src"), [parent, childAlias]),
+      ).toBe(false);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
-  // An agent that has cd-ed deeper is still in that worktree.
-  it("holds a subdirectory", () => {
-    expect(worktreeHoldsPath("/repo/wt/feature", "/repo/wt/feature/src")).toBe(
-      true,
-    );
+  it("holds its registered root and descendants", () => {
+    const root = "/repo/checkouts/feature";
+    const roots = ["/repo", root];
+    expect(worktreeHoldsPath(root, root, roots)).toBe(true);
+    expect(worktreeHoldsPath(root, `${root}/src`, roots)).toBe(true);
   });
 
-  // The separator is what keeps this from being a string-prefix test:
-  // `feature-two` is a sibling, not a child.
-  it("does not hold a sibling whose name starts the same way", () => {
-    expect(worktreeHoldsPath("/repo/wt/feature", "/repo/wt/feature-two")).toBe(
-      false,
-    );
-  });
-
-  it("does not hold the parent or an unrelated path", () => {
-    expect(worktreeHoldsPath("/repo/wt/feature", "/repo/wt")).toBe(false);
-    expect(worktreeHoldsPath("/repo/wt/feature", "/elsewhere")).toBe(false);
-    expect(worktreeHoldsPath("/repo/wt/feature", "")).toBe(false);
-  });
-
-  it("normalizes traversal rather than comparing raw strings", () => {
+  it("does not hold a same-prefix sibling", () => {
+    const root = "/repo/checkouts/feature";
     expect(
-      worktreeHoldsPath("/repo/wt/feature", "/repo/wt/feature/../feature/src"),
-    ).toBe(true);
-    expect(
-      worktreeHoldsPath("/repo/wt/feature", "/repo/wt/feature/../other"),
+      worktreeHoldsPath(root, "/repo/checkouts/feature-two/src", [root]),
     ).toBe(false);
   });
 
-  /**
-   * ccmux's linked worktrees physically nest under the main checkout, so a
-   * plain descendant test lets a main checkout on a PR's head claim a session
-   * living in `.claude/worktrees/<name>` on a different branch — and Enter's
-   * revalidation then activates the wrong agent. A descendant that crosses
-   * into a nested checkout belongs to that checkout, not this root.
-   */
-  it("does not hold a session inside a nested checkout", () => {
-    expect(worktreeHoldsPath("/repo", "/repo/.claude/worktrees/foo")).toBe(
-      false,
-    );
+  it("does not hold an ancestor, unrelated path, or empty candidate", () => {
+    const root = "/repo/checkouts/feature";
+    expect(worktreeHoldsPath(root, "/repo/checkouts", [root])).toBe(false);
+    expect(worktreeHoldsPath(root, "/elsewhere", [root])).toBe(false);
+    expect(worktreeHoldsPath(root, "", [root])).toBe(false);
   });
 
-  // An agent that cd-ed deeper into the nested checkout is still ITS session.
-  it("does not hold a subdirectory of a nested checkout", () => {
-    expect(worktreeHoldsPath("/repo", "/repo/.claude/worktrees/foo/src")).toBe(
-      false,
-    );
-  });
-
-  // Only the RELATIVE path from root to candidate decides: a nested root's
-  // own path contains the segments, and it still claims its own children.
-  it("lets a nested root hold its own children", () => {
-    expect(
-      worktreeHoldsPath(
-        "/repo/.claude/worktrees/foo",
-        "/repo/.claude/worktrees/foo/src",
-      ),
-    ).toBe(true);
-  });
-
-  // Segments, not substrings: `worktrees-old` is not the checkout parent.
-  it("does not treat a segment that merely starts with worktrees as a boundary", () => {
-    expect(worktreeHoldsPath("/repo", "/repo/.claude/worktrees-old/x")).toBe(
+  it("normalizes traversal before deciding ownership", () => {
+    const root = "/repo/checkouts/feature";
+    expect(worktreeHoldsPath(root, `${root}/../feature/src`, [root])).toBe(
       true,
     );
+    expect(worktreeHoldsPath(root, `${root}/../other`, [root])).toBe(false);
   });
 
-  it("does not treat .claude alone as a boundary", () => {
-    expect(worktreeHoldsPath("/repo", "/repo/.claude/other")).toBe(true);
+  it("assigns a custom nested checkout and its descendants to that checkout", () => {
+    const parent = "/repo/custom/layout/parent";
+    const child = `${parent}/arbitrary/deep/child`;
+    const roots = ["/repo", parent, child];
+    expect(worktreeHoldsPath(parent, `${child}/src`, roots)).toBe(false);
+    expect(worktreeHoldsPath(child, `${child}/src`, roots)).toBe(true);
   });
 
-  // The container directory itself belongs to the containing tree: no nested
-  // checkout starts until one segment further.
-  it("holds a session sitting on the container directory itself", () => {
-    expect(worktreeHoldsPath("/repo", "/repo/.claude/worktrees")).toBe(true);
+  it("uses the deepest registered checkout when worktrees are nested repeatedly", () => {
+    const parent = "/repo/custom/parent";
+    const child = `${parent}/nested/child`;
+    const deepest = `${child}/nested/grandchild`;
+    const roots = ["/repo", parent, child, deepest];
+    const sessionPath = `${deepest}/packages/app`;
+    expect(worktreeHoldsPath(parent, sessionPath, roots)).toBe(false);
+    expect(worktreeHoldsPath(child, sessionPath, roots)).toBe(false);
+    expect(worktreeHoldsPath(deepest, sessionPath, roots)).toBe(true);
+  });
+
+  it("keeps unregistered descendants with their containing worktree", () => {
+    const parent = "/repo/custom/layout/parent";
+    expect(
+      worktreeHoldsPath(parent, `${parent}/unregistered/descendant/src`, [
+        "/repo",
+        parent,
+      ]),
+    ).toBe(true);
   });
 });
 
@@ -343,6 +351,7 @@ async function mount(
     scopes: (string | null)[] = [],
     jumps: string[] = [],
     newDirs: string[] = [],
+    spawnRoots: (readonly string[])[] = [],
     urls: string[] = [];
   let scanCalls = 0,
     refreshes = 0;
@@ -391,7 +400,10 @@ async function mount(
         enabled={opts.enabled}
         onClose={() => {}}
         onJump={(s) => jumps.push(s.id)}
-        onSpawn={(t) => newDirs.push(t.cwd)}
+        onSpawn={(t) => {
+          newDirs.push(t.cwd);
+          spawnRoots.push(t.sameRepoRegisteredRoots);
+        }}
         onReview={(t) => reviews.push(t.branch ?? false)}
         onScope={(scope) => scopes.push(scope)}
         onNew={(cwd) => newDirs.push(cwd)}
@@ -426,6 +438,7 @@ async function mount(
     scopes,
     jumps,
     newDirs,
+    spawnRoots,
     urls,
     reads,
     setScope: setSharedScope,
@@ -592,6 +605,12 @@ describe("Worktrees view", () => {
     const h = await mount({ cursor: row().path });
     await h.keys.pressKey("n");
     expect(h.newDirs).toEqual([row().path]);
+  });
+  it("sends the repo's registered roots with an Enter spawn", async () => {
+    const h = await mount({ cursor: row().path });
+    await h.keys.pressEnter();
+    expect(h.newDirs).toEqual([row().path]);
+    expect(h.spawnRoots).toEqual([[mainRow().path, row().path]]);
   });
   it("scrolls the keyed cursor past the fold at sidebar width", async () => {
     const worktrees = Array.from({ length: 40 }, (_, i) =>

@@ -1,6 +1,7 @@
 import type { Component } from "solid-js";
 import type { ConnectionState } from "../utils/sse";
 import { theme } from "../theme";
+import { Text } from "./Text";
 
 interface HeaderProps {
   sessionCount: number;
@@ -35,39 +36,39 @@ export const Header: Component<HeaderProps> = (props) => {
   return (
     <box width="100%" height={1} paddingLeft={1} paddingRight={1}>
       <box flexDirection="row" width="100%">
-        <text flexShrink={0} fg={c(dotColor(props.connectionState))}>
+        <Text flexShrink={0} fg={c(dotColor(props.connectionState))}>
           ●{" "}
-        </text>
-        <text flexShrink={0} fg={c(theme.text)}>
+        </Text>
+        <Text flexShrink={0} fg={c(theme.text)}>
           <b>Sessions</b>
-        </text>
-        <text flexShrink={0} fg={c(theme.overlay)}>
+        </Text>
+        <Text flexShrink={0} fg={c(theme.overlay)}>
           {" "}
           ({props.sessionCount}
           {props.totalCount != null ? `/${props.totalCount}` : ""})
-        </text>
+        </Text>
         {props.hideIdle && (
-          <text flexShrink={0} fg={c(theme.yellow)}>
+          <Text flexShrink={0} fg={c(theme.yellow)}>
             {" "}
             [active]
-          </text>
+          </Text>
         )}
         {props.invokeInFlight ? (
-          <text flexShrink={0} fg={c(theme.peach)}>
+          <Text flexShrink={0} fg={c(theme.peach)}>
             {" "}
             · {props.invokeInFlight} invoking
-          </text>
+          </Text>
         ) : null}
         {props.daemonDegraded ? (
-          <text flexShrink={0} fg={c(theme.yellow)}>
+          <Text flexShrink={0} fg={c(theme.yellow)}>
             {" "}
             ⚠ daemon degraded: scans failing
-          </text>
+          </Text>
         ) : null}
         {/* The only segment allowed to shrink: a long repo name gives way
             before any signal does. */}
         {props.scope ? (
-          <text fg={c(theme.blue)}> {props.scope.split("/").pop()}</text>
+          <Text fg={c(theme.blue)}> {props.scope.split("/").pop()}</Text>
         ) : null}
       </box>
     </box>

@@ -1558,7 +1558,12 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     persistUIState({ collapsedGroups: pruned });
   }
 
-  /** Keep the action target aligned with the row returning from the band. */
+  /**
+   * Keep the action target aligned with a selected row whose wait ended.
+   * A row the filters now remove is deselected either way. Only a row
+   * returning from the band expands its group: with the band off it never
+   * left, so a collapsed group stays collapsed.
+   */
   function reconcileWaitingSelection(wasWaiting: boolean) {
     if (!wasWaiting || !state.selectedSessionId) return;
     const selected = state.sessions.find(
@@ -1571,6 +1576,7 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
       setState("previewFocused", false);
       return;
     }
+    if (!attentionBand) return;
     const key = getGroupKey(selected, state.groupBy);
     if (state.groupBy === "none" || !collapsedGroups().has(key)) return;
     const expanded = new Set(collapsedGroups());
@@ -1787,7 +1793,17 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
       });
     },
 
+    /**
+     * Add a row for `session_created`, or replace the row when one with this
+     * id is already there. The daemon creates a session once, but a second
+     * `created` for the same id used to append a copy that `updateSession`
+     * (first match only) never reached, so it sat frozen until a restart.
+     */
     addSession(session: EnrichedSession) {
+      if (state.sessions.some((s) => s.id === session.id)) {
+        this.updateSession(session);
+        return;
+      }
       setState("sessions", (s) => [...s, session]);
     },
 

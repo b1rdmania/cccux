@@ -40,6 +40,7 @@ import {
 } from "./session-columns";
 import { createPromptBlockCache } from "./prompt-block-cache";
 import { theme } from "../theme";
+import { Text } from "./Text";
 import { socketErrorMessage } from "../../lib/tmux-socket";
 import { padStartWidth } from "../utils/format";
 
@@ -427,11 +428,11 @@ export const SessionList: Component<SessionListProps> = (props) => {
               {(cell) =>
                 cell.width > 0 ? (
                   <box width={cell.width} flexShrink={0}>
-                    <text fg={headerFg()}>{cell.text}</text>
+                    <Text fg={headerFg()}>{cell.text}</Text>
                   </box>
                 ) : (
                   <box flexGrow={1} flexShrink={1}>
-                    <text fg={headerFg()}>{cell.text}</text>
+                    <Text fg={headerFg()}>{cell.text}</Text>
                   </box>
                 )
               }
@@ -442,9 +443,9 @@ export const SessionList: Component<SessionListProps> = (props) => {
             <For each={cells().right}>
               {(cell) => (
                 <box width={cell.width} flexShrink={0}>
-                  <text fg={headerFg()}>
+                  <Text fg={headerFg()}>
                     {padStartWidth(cell.text, cell.width)}
-                  </text>
+                  </Text>
                 </box>
               )}
             </For>
@@ -458,12 +459,12 @@ export const SessionList: Component<SessionListProps> = (props) => {
             <box paddingLeft={1} paddingTop={1}>
               <Show
                 when={props.socketError}
-                fallback={<text fg={theme.overlay}>No sessions found</text>}
+                fallback={<Text fg={theme.overlay}>No sessions found</Text>}
               >
                 {(error: () => TmuxSocketError) => (
-                  <text fg={theme.red}>
+                  <Text fg={theme.red}>
                     {socketErrorMessage(error().attemptedSocket)}
-                  </text>
+                  </Text>
                 )}
               </Show>
             </box>

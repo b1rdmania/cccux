@@ -16,6 +16,11 @@
   <img alt="ccmux picker showing live agent sessions grouped by project" src="https://github.com/user-attachments/assets/e4c41e9c-9221-47e2-86d4-362dd799651a" width="900">
 </p>
 
+<p align="center">
+  <a href="https://ccmux.dev">Website</a> ·
+  <a href="https://ccmux.dev/docs/">Documentation</a>
+</p>
+
 ## ❓ Why?
 
 When running multiple AI coding agent sessions across tmux panes, it's hard to keep track of which session is idle, which is waiting for permission, and which pane to switch to. `ccmux` solves this with a background daemon that monitors session activity and an interactive TUI that shows live session states at a glance.
@@ -53,7 +58,7 @@ It works with your existing tmux workflow. You don't change how you launch or ru
 ### Homebrew
 
 ```sh
-brew install epilande/tap/ccmux
+brew install ccmux
 ccmux setup
 ```
 
@@ -169,7 +174,7 @@ The daemon starts automatically the first time you run a ccmux command (picker, 
 
 Press <kbd>P</kbd> to split the picker and preview the highlighted session's live pane content side by side. Press <kbd>Tab</kbd> to focus the preview and act in place: your keystrokes go straight to that agent's pane, so you can approve a permission, answer a question, or type a follow-up without ever leaving ccmux.
 
-The preview header names the session: the project in bold, then the agent's own summary of the session on agents that publish one (Claude Code, OpenCode, Cursor, oh-my-pi, and Copilot do; on the rest the line is omitted), then the working directory and the branch/version/target metadata.
+The preview header names the session: the project in bold, then the agent's own summary of the session on agents that publish one (Claude Code, Codex, OpenCode, Cursor, oh-my-pi, and Copilot do; on the rest the line is omitted), then the working directory and the branch/version/target metadata.
 
 When the session has agents running, an **Agents** section lists each one with its runtime. Finished agents drop off the list.
 
@@ -236,6 +241,49 @@ ccmux config set sidebar.position right
 bind-key S run-shell "ccmux sidebar --toggle"
 ```
 
+### Tmux status line
+
+The daemon publishes session counts and window attention marks automatically. Nothing changes visibly until you reference the options in your own `~/.tmux.conf` formats (ccmux never edits them):
+
+```tmux
+set -g status-right '#{@ccmux_status} %H:%M'
+set -g window-status-format '#I:#W#{@ccmux_mark}'
+set -g window-status-current-format '#I:#W#{@ccmux_mark}'
+```
+
+Reload with `tmux source-file ~/.tmux.conf`. To disable publishing entirely, set `ccmux config set statusBar.enabled false` and restart the daemon. Publishing pauses while no tmux server is available and resumes when the daemon detects one.
+
+`@ccmux_status` shows waiting and unread counts, for example `■ 2 ● 1`, and is empty when neither needs attention. The global options `@ccmux_waiting`, `@ccmux_unread`, and `@ccmux_working` expose raw counts for custom formats. Each window's `@ccmux_mark` shows its most urgent state: waiting (`■`) before unread (`●`). The mark includes its leading space and is unset on quiet windows, so place it directly after `#W`. Each colored icon ends by resetting the foreground to your status bar's base color, so put `#{@ccmux_mark}` last in a styled segment, right before the next `#[fg=...]`. With catppuccin, for example, add it after the zoom flag in `@catppuccin_window_default_text` and `@catppuccin_window_current_text`: `#W#{?window_zoomed_flag,(),}#{@ccmux_mark}`. Background sessions count globally but have no window mark. Focusing a pane clears unread through the existing attention tracking.
+
+Icons follow the existing `iconStyle` preference (`dot`, `emoji`, `nerdfont`, or `none`), using the shared generic waiting and unread icons. The default `dot` style uses ordinary Unicode symbols and does not require a Nerd Font. Only choose `nerdfont` if your terminal uses a Nerd Font; unsupported glyphs may appear as boxes. For plain ASCII, use overrides such as `!` and `*` below. With `none`, counts remain visible and window marks are hidden. Explicit icon overrides take precedence, including over `none`. Icons and foreground colors apply to both the segment and window marks:
+
+```bash
+ccmux config set statusBar.waitingIcon '!'
+ccmux config set statusBar.unreadIcon '*'
+ccmux config set statusBar.waitingColor yellow
+ccmux config set statusBar.unreadColor '#a6e3a1'
+ccmux daemon restart
+```
+
+Colors default to `red` for waiting and `green` for unread, matching the picker; ANSI names follow your terminal's palette. Set a color to empty (`ccmux config set statusBar.waitingColor ''`) to inherit the surrounding tmux style instead. Accepted colors are ANSI names such as `yellow` or `brightred`, `colour0`–`colour255`, `#rrggbb`, and `default`. Icons are plain text. All `statusBar` settings, and changes to `iconStyle` for this daemon-owned surface, require a daemon restart. Updates follow session changes, write only changed values, and use the configured tmux socket. A normal daemon stop unsets the options and marks; pane moves are picked up on the next daemon scan.
+
+**Click to open the picker (tmux 3.4+).** Use these formats and binding in `~/.tmux.conf` to make the attention segment and individual window marks open a picker popup. Window names still select their windows, and the clock keeps its normal status-right behavior:
+
+```tmux
+set -g mouse on
+set -g status-right '#[range=user|ccmux]#{@ccmux_status}#[range=right] %H:%M'
+set -g window-status-format '#I:#W#[range=user|ccmux]#{@ccmux_mark}#[range=window|#{window_index}]'
+set -g window-status-current-format '#I:#W#[range=user|ccmux]#{@ccmux_mark}#[range=window|#{window_index}]'
+
+bind-key -n MouseDown1Status if-shell -F '#{==:#{mouse_status_range},ccmux}' {
+  display-popup -E -w 80% -h 75% 'ccmux picker'
+} {
+  select-window -t =
+}
+```
+
+Reload with `tmux source-file ~/.tmux.conf`. If you already customize `MouseDown1Status`, keep your existing action in the final branch instead of `select-window -t =`. These mouse bindings belong to your tmux configuration; the daemon only publishes the option values.
+
 ### Notifications
 
 Desktop notifications on `waiting`/`finished` transitions, disabled by default. When a session needs permission, or has a plan waiting for approval, the banner carries **Approve** / **Deny** buttons; permission, plan, question, and "finished" notifications also carry an inline **Reply** field, so you can answer, redirect, or send the next instruction without switching to its pane. Focusing a session's pane clears its notification.
@@ -249,7 +297,7 @@ ccmux config set notifications.enabled true
 ccmux notify   # sends a test notification and prints setup diagnostics
 ```
 
-Actionable Approve/Deny buttons work for **Claude Code**, **OpenCode**, **Codex**, **Cursor**, **Gemini CLI**, **Antigravity**, **Copilot**, and **oh-my-pi**; Pi has no tool-approval pause, so it never raises a waiting notification. Inline **Reply** on waiting-state notifications (permission, plan, question) is Claude Code only; Reply on **finished** notifications works for every built-in agent. A reply the agent's composer would misread as a command (e.g. leading `!` or `/`) is refused instead of typed, and the text comes back in a follow-up notification so it isn't lost. Approve/Deny work on macOS and Linux; inline reply needs a notification server that advertises it (always on macOS, varies on Linux).
+Actionable Approve/Deny buttons work for **Claude Code**, **OpenCode** (1.x only), **Codex**, **Cursor**, **Gemini CLI**, **Antigravity**, **Copilot**, and **oh-my-pi**; Pi has no tool-approval pause, so it never raises a waiting notification. OpenCode's buttons are withheld on OpenCode 2, whose permission row turns the 1.x Deny keys into an approval, and on any OpenCode session whose version ccmux could not read, including preview builds that report `0.0.0-*`. Inline **Reply** on waiting-state notifications (permission, plan, question) is Claude Code only; Reply on **finished** notifications works for every built-in agent. A reply the agent's composer would misread as a command (e.g. leading `!` or `/`) is refused instead of typed, and the text comes back in a follow-up notification so it isn't lost. Approve/Deny work on macOS and Linux; inline reply needs a notification server that advertises it (always on macOS, varies on Linux).
 
 For OpenCode, one server can host several sessions folded into a single row, so when more than one is waiting at once the buttons are withheld (the keystroke could land on the wrong session's dialog) and the notification is delivered informational-only.
 
@@ -345,26 +393,35 @@ spawn rather than guessing a flag, and you can teach it the right shape with
 `--model <name>` starts the agent on that model, passed through as the agent's
 own flag (`--model` for every built-in, read from each CLI's `--help`). An
 agent with no known flag, including a custom one, refuses the spawn; declare
-`modelFlag` in its config to teach it. A new window is named after the
-worktree when the spawn has one (`fix-flicker`, `issue-150-...`, `pr-154-...`)
-and after the agent otherwise, so a batch of spawns is tellable apart; the name
-pins tmux's `automatic-rename` off for that window.
+`modelFlag` in its config to teach it. OpenCode 2's TUI has no model flag and
+exits on `--model`, so pick its model with `/models` inside OpenCode. A new
+window is named after the worktree when the spawn has one (`fix-flicker`,
+`issue-150-...`, `pr-154-...`) and after the agent otherwise, so a batch of
+spawns is tellable apart; the name pins tmux's `automatic-rename` off for that
+window.
 
-`--worktree [name]` spawns the agent into a git worktree at
-`<main>/.claude/worktrees/<name>`, creating it first if it doesn't exist yet.
-An explicit name is create-or-open: spawning into the same name again reuses
-that worktree rather than failing. Without a name, ccmux derives one from
-`--prompt`'s opening words; a derived name that collides with an existing
-worktree gets a numeric suffix (`-2`, `-3`, ...) instead of reusing it, since
-two different prompts landing in the same worktree would silently merge
-unrelated work. `--base <ref>` sets what the new branch is cut from,
-defaulting to the main checkout's current branch.
+`--worktree [name]` spawns the agent into a git worktree at the configured
+`worktree.path` (default: `<main>/.claude/worktrees/<name>`), creating it first
+if it does not exist yet. [Worktree paths and names](#worktree-paths-and-names)
+explains the path template, safety rules, and exclusion behavior.
+An explicit name is create-or-open: spawning into the same branch again reuses
+its registered worktree, including one created under an earlier path layout.
+Without a name, ccmux derives one from `--prompt`'s opening words; a derived
+name that collides with an existing worktree gets a numeric suffix (`-2`,
+`-3`, ...) instead of reusing it, since two different prompts landing in the
+same worktree would silently merge unrelated work. `--base <ref>` sets what
+the new branch is cut from, defaulting to the main checkout's current branch.
 
-Creating a worktree also adds `**/.claude/worktrees/` to the hosting repo's
-`.git/info/exclude` (the same line Claude Code writes, and the same file —
-local to your clone, never `.gitignore`), so the worktrees don't show up as
-untracked work in the checkout that hosts them. It is added once, only if git
-isn't already ignoring that path, and nothing else in the file is touched.
+An explicit name whose branch is checked out in the main checkout is refused:
+use `--cwd` to start an agent there, or switch the main checkout to another
+branch first. PR and issue reuse may still open the main checkout when it
+already holds that source.
+
+When the resolved worktree parent is inside the main checkout, ccmux adds an
+exclude for that parent to the hosting repo's `.git/info/exclude` (the same
+file Claude Code writes, local to your clone, never `.gitignore`). The default
+path keeps the exact `**/.claude/worktrees/` pattern. Paths outside the main
+checkout need no exclusion and leave the file untouched.
 
 ### Spawning on a PR or an Issue
 
@@ -372,19 +429,24 @@ isn't already ignoring that path, and nothing else in the file is touched.
 spawns the agent into a worktree checked out on the PR's **own branch**, set
 up to track it the way `gh pr checkout` would, including a fork PR, whose
 branch is pointed at the fork's clone URL so `git push` updates the PR instead
-of failing. The worktree is named `pr-<n>-<head-ref>`, which deliberately
-never collides with the `pr-<n>` directories Claude Code creates for its own
-fetch-only PR checkouts. `--base` is refused here: the PR's head is the start
-point. ccmux records `origin/<base>` as the branch's review base, so <kbd>d</kbd>
-in the picker shows the PR's actual diff.
+of failing. By default its logical name is `pr-<n>-<head-ref>`, which
+deliberately never collides with the `pr-<n>` directories Claude Code creates
+for its own fetch-only PR checkouts. `worktree.path` controls only the
+directory; it does not change the PR branch, and the tmux window uses the
+logical worktree name rather than a path-derived basename. `--base` is
+refused here: the PR's head is the start point. ccmux records `origin/<base>`
+as the branch's review base, so <kbd>d</kbd> in the picker shows the PR's
+actual diff.
 
-`--issue <n>` is an ordinary spawn-from-base worktree named `issue-<n>-<title>`;
-`--base` works as usual.
+`--issue <n>` is an ordinary spawn-from-base worktree whose default logical
+name is `issue-<n>-<title>`; `--base` works as usual. The configured path
+affects only the directory. Issue discovery matches the `issue-<n>` branch
+family rather than relying on that configurable path.
 
 Both seed the agent's opening prompt with the title and URL, and your own
 `--prompt` is appended after it. A PR whose branch is already checked out is
 opened rather than duplicated; a second `--issue` of the same number opens the
-existing `issue-<n>` worktree the same way. Both refuse rather than guess: a
+existing worktree for that issue branch. Both refuse rather than guess: a
 PR that is not open, an issue that is closed, and a same-named local branch
 that is not that PR (a branch counts as the PR's only when its `merge` _and_ `remote` config
 both already point at it, so a fork PR cannot ride in on a name collision with
@@ -705,8 +767,66 @@ ccmux config list
 | `tmuxSocket`                 | socket path (`/...`) or label                                                | unset              | tmux server to track (daemon restart required; see [Non-default tmux Server](#-non-default-tmux-server))                           |
 | `sidebar.width`              | `10`–`80`                                                                    | `30`               | Sidebar pane width in columns                                                                                                      |
 | `sidebar.position`           | `left`, `right`                                                              | `left`             | Which side of the window to place the sidebar                                                                                      |
+| `worktree.path`              | Path template with `{name}` and optional `{repo}`                                 | `.claude/worktrees/{name}` | Worktree directory template; relative to main checkout, `~/` to home, or absolute |
 
 For how these search knobs interact, see [Search Mode](#search-mode).
+
+### Worktree paths and names
+
+`worktree.path` defaults to `.claude/worktrees/{name}`. Relative templates
+resolve from the main checkout; a leading `~/` expands from the user's home
+directory, and absolute paths are allowed. `{repo}` expands to the sanitized
+basename of the main checkout (the same safe-component rule used by ccmux's
+worktree directory naming); `{name}` is the logical worktree name. The template
+must contain exactly one `{name}`, in the final path segment. `{repo}` is
+optional and may be repeated.
+
+```bash
+ccmux config set worktree.path '.claude/worktrees/{name}'    # default, inside the repo
+ccmux config set worktree.path '../{repo}.{name}'            # beside the repo
+ccmux config set worktree.path '../{repo}.worktrees/{name}'  # beside the repo, grouped
+ccmux config set worktree.path '~/worktrees/{repo}/{name}'   # one central directory
+```
+
+With the main checkout at `/code/app` and the name `fix-sidebar`, the first
+four templates resolve to `/code/app/.claude/worktrees/fix-sidebar`,
+`/code/app.fix-sidebar`, `/code/app.worktrees/fix-sidebar`, and
+`~/worktrees/app/fix-sidebar`, respectively (`~` stands for the user's home
+directory).
+
+Templates with missing or repeated `{name}`, `{name}` outside the final path
+segment, unknown or unmatched placeholders, control characters, or unsupported
+`~user` expansion are refused. A resolved worktree may not be the main
+checkout, be inside `.git`, or have the main checkout itself as its parent;
+the last case would make the exclusion cover the whole repository. A custom
+parent inside the main checkout must also be a dedicated directory: one that
+already holds tracked files (`src/{name}`, `.claude/{name}`) is refused at
+spawn, because excluding it would hide new files there from git. For
+example, `../{repo}` has no `{name}`, `{name}/src` puts it outside the final
+segment, `{name}` has the main checkout as its parent, `.git/wt/{name}` is
+inside git metadata, and `../{branch}` uses an unknown placeholder. The target
+is also refused if it resolves to the main checkout, such as `../{name}` with
+name `app`.
+
+The configured path controls directory placement only: branches and tmux
+window names keep the logical worktree name, not a `{repo}`-decorated basename.
+Collision numbers are added to `{name}` (`../{repo}-wt-{name}-task` becomes
+`app-wt-fix-2-task`, not `app-wt-fix-task-2`). On reopen, ccmux strips the
+current template's literal prefix and suffix from the directory name when they
+match; otherwise it falls back to the directory basename. Changing the
+template never relocates or renames an existing worktree, and a branch already
+checked out in a registered worktree is reused across path layouts. Issue
+worktrees are identified from their `issue-<n>` / `issue-<n>-...` branch; branch
+identity also decides between issue candidates, with directory name used only
+as the fallback for a branchless legacy checkout.
+Name extraction compares the directory basename, not its parent path: changing
+only the parent keeps the logical name when the basename pattern still matches.
+
+These settings apply to regular, fork, PR and issue spawns, and **Move changes**.
+If a resolved worktree parent is inside the main checkout, ccmux adds an
+exclusion for that parent to the hosting repo's `.git/info/exclude`; the
+default still writes exactly `**/.claude/worktrees/`. A parent outside the main
+checkout needs no exclusion. Neither case edits `.gitignore`.
 
 ### 📊 Column Configuration
 
@@ -736,7 +856,7 @@ Pass an empty string to clear a side: `ccmux config set columns.row2.left ""`.
 | `pr`      | `short`/`full`        | `full`       | Open PRs for the branch (`#25`/`PR #25`)                                                 |
 | `summary` | —                     | —            | The agent's own summary of the session, falling back to the last prompt (truncated)      |
 
-`summary` is the default subtitle cell, and shows what the agent says it is doing. Claude Code, Copilot, Cursor, OpenCode and oh-my-pi each keep a generated summary in their tmux pane title; the column reads that through a per-agent rule that drops the status glyph, the spinner frame and the app name, so what lands on the row is the summary alone. Every other agent writes its cwd, its own state or a static app name there, and for those the cell falls back to the last prompt. A pane title equal to the machine's own hostname is never shown either: that is the seed tmux gives a pane whose agent never set a title. Never both on one line.
+`summary` is the default subtitle cell, and shows what the agent says it is doing. Claude Code, Codex, Copilot, Cursor, OpenCode and oh-my-pi each keep a generated summary in their tmux pane title; the column reads that through a per-agent rule that drops the status glyph, the spinner frame and the app name, so what lands on the row is the summary alone. Every other agent writes its cwd, its own state or a static app name there, and for those the cell falls back to the last prompt. A pane title equal to the machine's own hostname is never shown either: that is the seed tmux gives a pane whose agent never set a title. Never both on one line.
 
 `prompt` is unchanged and still shows the raw last prompt. To keep it as the subtitle, name it in the column config:
 
@@ -751,7 +871,7 @@ The `project` cell keeps the checkout path and branch in every grouping, includi
 
 Status badges keep completion, invoke success/failure/cancellation, background agents, and subagent activity distinct. `iconStyle` and the `status` column's `icon`, `short`, and `full` modes remain supported; defaults expand with the available width. Attention reasons sit beside the task text, so a pending permission does not replace the summary or search match.
 
-Waiting sessions move into a pinned `needs attention` band above the groups, oldest wait first. They appear once, retain repo and tmux session identity, and return to their group when the wait ends. The band disappears when empty and stays expanded through collapse-all. With grouping off, a `sessions` header ends the band so the rows below it do not read as waiting. Search still filters sessions; `f` never removes a waiting row. Each header counts its own remaining rows. To keep waiting sessions in their own groups instead, run `ccmux config set attentionBand false`; it applies the next time the picker or sidebar opens.
+Waiting sessions move into a pinned `needs attention` band above the groups, oldest wait first. They appear once, retain repo and tmux session identity, and return to their group when the wait ends. The band disappears when empty and stays expanded through collapse-all. With grouping off, a `sessions` header ends the band so the rows below it do not read as waiting. Search still filters sessions; `f` never removes a waiting row. Each header counts its own remaining rows. To keep waiting sessions in their own groups instead, run `ccmux config set attentionBand false`. It applies the next time the picker or sidebar opens; ones already open keep the setting they started with.
 
 Project headers that unambiguously identify one repo show `main + N worktrees`, based only on the local worktree list; a repo with only its main checkout shows nothing. Facts are omitted when the complete phrase cannot fit. Cwd/tmux groups, mixed-repo headers, and the attention band have no repo facts. Collapsed activity counts take priority over optional facts when space is tight. These read-only counts come from the same daemon cache as the strip counts, refreshed on a timer and with <kbd>R</kbd>; a refresh that fails keeps the previous count, marked `~`.
 
@@ -912,6 +1032,8 @@ Uses OpenCode's plugin system rather than shell hooks. `ccmux setup --agent open
 
 Because one OpenCode server can host many sessions, the daemon folds all markers sharing a server PID into the single ccmux Session for the tmux pane that hosts the server. Status is worst-of (`waiting > working > idle`); `cwd` and `nativeSessionId` come from the newest-activity marker, while `pendingTool` and the attention indicator come from the newest-waiting marker.
 
+OpenCode 2 rejects that plugin and runs its sessions in a shared background service outside your panes, so setup also installs a TUI plugin at `~/.config/opencode/plugins/ccmux/tui.js`, which runs inside each pane's OpenCode and reports the session that pane is showing (OpenCode 1 ignores it). On 2.x, setup removes the 1.x plugin instead of installing it. Notification Approve/Deny buttons are not offered on OpenCode 2 yet.
+
 ### Pi / oh-my-pi
 
 Both use Pi's extension system rather than shell hooks (oh-my-pi, `omp`, is a hard fork of Pi that kept the extension API). `ccmux setup --agent pi` / `--agent omp` drops a single auto-discovered JS extension at `~/.pi/agent/extensions/ccmux.js` or `~/.omp/agent/extensions/ccmux.js`. The extension subscribes to the agent's lifecycle events and writes one marker per session:
@@ -1008,7 +1130,7 @@ names whichever one it found. The optional `{bin}`
 resolves to the agent's launcher, so a wrapper binary or `executable` override
 survives.
 
-You can also override built-in agent settings by using the agent's name as the key (e.g., `"claude"`, `"codex"`). An override of `notificationActions` (the notification button/reply keystroke map) **replaces the whole map**, it is not merged key by key; it also controls the reply surfaces (`replyOnQuestion`, `replyOnFinished`, `permissionReplyPrelude`, the `plan*` keys, and the `unsafeReplyPattern` reply guard, written as a regex string like `readyPattern`), so any key you leave out is dropped rather than inherited from the built-in default. Copy across every key you still want when you override it. The one exception is `unsafeReplyPattern`: it is carried forward from the built-in as a safety default even when your override omits it, so a partial override can't accidentally re-enable unapproved shell execution through a reply. To disable it on purpose, set an explicit never-match pattern (e.g. `"/(?!x)x/"`).
+You can also override built-in agent settings by using the agent's name as the key (e.g., `"claude"`, `"codex"`). An override of `notificationActions` (the notification button/reply keystroke map) **replaces the whole map**, it is not merged key by key; it also controls the reply surfaces (`replyOnQuestion`, `replyOnFinished`, `permissionReplyPrelude`, the `plan*` keys, and the `unsafeReplyPattern` reply guard, written as a regex string like `readyPattern`), so any key you leave out is dropped rather than inherited from the built-in default. Copy across every key you still want when you override it. The one exception is `unsafeReplyPattern`: it is carried forward from the built-in as a safety default even when your override omits it, so a partial override can't accidentally re-enable unapproved shell execution through a reply. To disable it on purpose, set an explicit never-match pattern (e.g. `"/(?!x)x/"`). `approvalKeysVerifiedThroughMajor` carries forward the same way: it is the newest major version of the agent whose prompt the `approve`/`deny` keys were verified on (OpenCode's is `1`), and sessions on a newer or unresolved version get no Approve/Deny buttons. Set a larger number only once you have checked your keys against that version's prompt.
 
 | Field                 | Required | Description                                                                         |
 | :-------------------- | :------- | :---------------------------------------------------------------------------------- |

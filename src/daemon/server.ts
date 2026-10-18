@@ -8,9 +8,14 @@ import {
   MAX_SEND_PASTE_CHARS,
   MAX_SEND_TEXT_CHARS,
   isCcmuxPane,
+  PREFS_FILE,
   resolvedHomeDir,
 } from "../lib/config";
 import { getPreferences } from "../lib/preferences";
+import {
+  resolveWorktreePath,
+  validateWorktreeConfig,
+} from "../lib/worktree-layout";
 import { listTmuxClientTtys } from "../lib/tmux-client";
 import { tmuxArgv } from "../lib/tmux-exec";
 import { attemptedTmuxSocketPath } from "../lib/tmux-socket";
@@ -70,9 +75,11 @@ import {
   existingWorktreeFor,
   pickIssueWorktree,
   readCheckoutHead,
+  resolveWorktreeName,
   slugForFork,
   slugForIssue,
   slugForPR,
+  trackedWorktreeParentError,
   type WorktreeCreation,
 } from "./worktree-create";
 import {
@@ -92,6 +99,7 @@ import { listSpawnableAgents, spawnBinaryFor } from "../lib/spawnable-agents";
 import {
   getMarkerKey,
   isBackgroundSession,
+  isVisibleSession,
   type SessionManager,
   type SessionEvent,
 } from "./sessions";
@@ -1619,27 +1627,6 @@ export class DaemonServer {
   }
 
   /**
-   * Whether a session should be surfaced to clients. Pane-tracked/native
-   * sessions are visible once they have a tmux pane; background
-   * (background-agent) sessions are paneless by nature and visible from
-   * creation (their `created` event IS their visible moment).
-   */
-  private isVisibleSession(s: Readonly<Session>): boolean {
-    return (
-      s.tmuxPane !== null ||
-      s.trackingMode === "background" ||
-      // Transcript-backed native sessions are visible even without a pane:
-      // when the binder refuses to guess (ambiguous
-      // evidence) the row must be VISIBLY unbound, not hidden — an unbound
-      // row self-corrects (marker arrival, rebind attempt) or is reaped by
-      // the zombie cleanup, and hiding it would just re-disguise the
-      // refusal as a missing session. Pane-tracked sessions keep the
-      // pane-gated promotion: their existence IS their pane.
-      (s.trackingMode === "native" && s.logPath !== null)
-    );
-  }
-
-  /**
    * Resolve this daemon's tmux socket path. Works without an attached client
    * (the daemon runs detached): `display-message -p` reads the same server
    * `list-panes -a` scans (the configured socket override, else the inherited
@@ -1701,7 +1688,7 @@ export class DaemonServer {
     const allSessions = this.sessionManager.getSessions();
     const data = {
       status: "ok",
-      sessions: allSessions.filter((s) => this.isVisibleSession(s)).length,
+      sessions: allSessions.filter((s) => isVisibleSession(s)).length,
       trackedSessions: allSessions.length,
       clients: this.sseClients.size,
       uptime: process.uptime(),
@@ -1717,7 +1704,7 @@ export class DaemonServer {
   ): Promise<Response> {
     const showAll = url.searchParams.get("all") === "true";
     let sessions = this.sessionManager.getSessions();
-    if (!showAll) sessions = sessions.filter((s) => this.isVisibleSession(s));
+    if (!showAll) sessions = sessions.filter((s) => isVisibleSession(s));
     return Response.json(
       { sessions: await this.enrichSessions(sessions) },
       { headers },
@@ -2353,7 +2340,7 @@ export class DaemonServer {
     const query = q.toLowerCase();
     const sessions = this.sessionManager
       .getSessions()
-      .filter((s) => this.isVisibleSession(s));
+      .filter((s) => isVisibleSession(s));
 
     const results: SessionMatches[] = [];
     for (let i = 0; i < sessions.length; i += SEARCH_CONCURRENCY) {
@@ -4097,7 +4084,7 @@ export class DaemonServer {
         // Send init event with pane-matched + background (paneless) sessions
         const matched = this.sessionManager
           .getSessions()
-          .filter((s) => this.isVisibleSession(s));
+          .filter((s) => isVisibleSession(s));
         for (const s of matched) this.visibleSessions.add(s.id);
         const initEvent: SSEEvent = {
           type: "init",
@@ -4147,7 +4134,7 @@ export class DaemonServer {
         // session_created at creation. Pane-tracked sessions start
         // tmuxPane=null and are suppressed until a pane is assigned
         // (promoted in the "updated" branch).
-        if (this.isVisibleSession(session)) {
+        if (isVisibleSession(session)) {
           this.visibleSessions.add(session.id);
           this.recordBroadcast(session);
           return {
@@ -4161,7 +4148,7 @@ export class DaemonServer {
 
       case "updated": {
         const session = event.session!;
-        const isVisibleNow = this.isVisibleSession(session);
+        const isVisibleNow = isVisibleSession(session);
         const wasVisible = this.visibleSessions.has(session.id);
 
         if (isVisibleNow && !wasVisible) {
@@ -4888,6 +4875,14 @@ export class DaemonServer {
     const worktreeValue =
       worktreeRequest.value ?? (sourceFlag ? {} : undefined);
     if (worktreeValue) {
+      const layout = preferences.worktree ?? {};
+      const layoutError = validateWorktreeConfig(preferences.worktree);
+      if (layoutError) {
+        return Response.json(
+          { error: `${layoutError} (fix it in ${PREFS_FILE})` },
+          { status: 400, headers },
+        );
+      }
       const gitInfo = await this.getGitInfo(cwd);
       if (!gitInfo.mainRepoRoot) {
         return Response.json(
@@ -4949,6 +4944,53 @@ export class DaemonServer {
                 `(${forkSource.session.cwd}): its branch name has nothing usable in it, or it ` +
                 `has no commits yet. Name the worktree yourself: pass '--worktree <name>', or ` +
                 `type a name in the dialog's Name row.`,
+            },
+            { status: 400, headers },
+          );
+        }
+      }
+
+      const named = resolveWorktreeName(
+        creation.name,
+        sourceFlag ? undefined : (prompt ?? undefined),
+        sourceWorktreeName ?? derivedName,
+      );
+      if (!named.ok)
+        return Response.json({ error: named.error }, { status: 400, headers });
+      const destination = resolveWorktreePath(mainRepoRoot, named.name, layout);
+      if (!destination.ok)
+        return Response.json(
+          { error: destination.error },
+          { status: 400, headers },
+        );
+      // Before any stash: Move changes must refuse this the same way the
+      // engine does, while the source checkout is still untouched.
+      const trackedParent = await trackedWorktreeParentError(
+        mainRepoRoot,
+        destination,
+      );
+      if (trackedParent)
+        return Response.json(
+          { error: trackedParent },
+          { status: 400, headers },
+        );
+      if (withChanges && creation.name !== undefined) {
+        const occupied = await existingWorktreeFor(
+          mainRepoRoot,
+          creation.name,
+          undefined,
+          layout,
+        );
+        if (!occupied.ok)
+          return Response.json(
+            { error: occupied.error, reason: "create-failed" },
+            { status: 400, headers },
+          );
+        if (occupied.worktree) {
+          return Response.json(
+            {
+              error: `Worktree '${creation.name}' already exists at ${occupied.worktree.path}; moving changes needs a fresh worktree (pick another name, or leave the name empty to derive one from the prompt).`,
+              reason: "create-failed",
             },
             { status: 400, headers },
           );
@@ -5019,7 +5061,12 @@ export class DaemonServer {
       // run's sibling worktrees out of the copy list and the counts. The
       // engine calls it too, and it is idempotent, so this is a cheap
       // `check-ignore` on the path that needs it earliest.
-      await ensureWorktreesExcluded(mainRepoRoot);
+      if (withChanges)
+        await ensureWorktreesExcluded(
+          mainRepoRoot,
+          undefined,
+          destination.path,
+        );
 
       /**
        * The creation engine, adapted to the move module's seam.
@@ -5036,10 +5083,14 @@ export class DaemonServer {
        * made and must be able to tell a fresh worktree from an opened one.
        */
       const createForMove: CreateWorktree = async (opts) => {
-        const created = await createWorktree(mainRepoRoot, {
-          ...opts,
-          prompt: prompt ?? undefined,
-        });
+        const created = await createWorktree(
+          mainRepoRoot,
+          {
+            ...opts,
+            prompt: prompt ?? undefined,
+          },
+          { layout },
+        );
         if (!created.ok) throw new Error(created.error);
         worktreeInfo = created.result;
         return {
@@ -5052,28 +5103,9 @@ export class DaemonServer {
       };
 
       if (withChanges) {
-        // Refused here rather than inside the move, because here nothing has
-        // happened yet: no stash, no worktree, no half-finished anything.
-        // The move itself refuses an opened worktree too (it has to — this
-        // check can lose a race with a concurrent spawn), but by then the
-        // user's changes have been through a stash and back.
-        if (creation.name !== undefined) {
-          const occupied = await existingWorktreeFor(
-            mainRepoRoot,
-            creation.name,
-          );
-          if (occupied) {
-            return Response.json(
-              {
-                error:
-                  `Worktree '${creation.name}' already exists at ${occupied}; moving changes needs a fresh worktree ` +
-                  `(pick another name, or leave the name empty to derive one from the prompt).`,
-                reason: "create-failed",
-              },
-              { status: 400, headers },
-            );
-          }
-        }
+        // The preflight above refuses known occupied names before setup. The
+        // move repeats the guard after creation because another spawn may
+        // claim the branch in between; that refusal restores the stash.
         // Routed THROUGH the move, never beside it: the module owns the
         // ordering that keeps the work recoverable (stash, create, apply,
         // drop) and the rollback for every failure in it, so creating the
@@ -5123,36 +5155,41 @@ export class DaemonServer {
         };
       } else {
         const issueNumber = issueResult.value;
-        const created = await createWorktree(mainRepoRoot, {
-          ...creation,
-          // No prompt on the pr/issue paths, deliberately:
-          // `resolveWorktreeName` PREFERS a prompt over a derived name, so
-          // threading the seeded one through would silently rename the
-          // worktree after the PR's title and lose the `pr-<n>-` prefix that
-          // keeps it clear of Claude Code's own `pr-<n>` directories.
-          prompt: sourceFlag ? undefined : (prompt ?? undefined),
-          derivedName: sourceWorktreeName ?? derivedName,
-          // No base recorded on the PR path, deliberately: `creation.base` is
-          // the PR's own head sha, so the record would make the branch its
-          // own review base. `configurePRBranch` writes that key here with
-          // the branch the PR targets, and when it cannot, no key is what
-          // lets the picker's `D` fall back to its heuristic base.
-          ...(prBranch
-            ? {
-                branch: prBranch,
-                branchExists: prBranchExisted,
-                recordBase: false,
-              }
-            : {}),
-          // Under the lock, so a checkout that appeared while the picker
-          // sat open is still found: numbering `issue-<n>-<slug>-2` would
-          // break Enter's "already checked out → open it" guarantee.
-          ...(issueNumber !== undefined
-            ? {
-                reuseExisting: (trees) => pickIssueWorktree(issueNumber, trees),
-              }
-            : {}),
-        });
+        const created = await createWorktree(
+          mainRepoRoot,
+          {
+            ...creation,
+            // No prompt on the pr/issue paths, deliberately:
+            // `resolveWorktreeName` PREFERS a prompt over a derived name, so
+            // threading the seeded one through would silently rename the
+            // worktree after the PR's title and lose the `pr-<n>-` prefix that
+            // keeps it clear of Claude Code's own `pr-<n>` directories.
+            prompt: sourceFlag ? undefined : (prompt ?? undefined),
+            derivedName: sourceWorktreeName ?? derivedName,
+            // No base recorded on the PR path, deliberately: `creation.base` is
+            // the PR's own head sha, so the record would make the branch its
+            // own review base. `configurePRBranch` writes that key here with
+            // the branch the PR targets, and when it cannot, no key is what
+            // lets the picker's `D` fall back to its heuristic base.
+            ...(prBranch
+              ? {
+                  branch: prBranch,
+                  branchExists: prBranchExisted,
+                  recordBase: false,
+                }
+              : {}),
+            // Under the lock, so a checkout that appeared while the picker
+            // sat open is still found: numbering `issue-<n>-<slug>-2` would
+            // break Enter's "already checked out → open it" guarantee.
+            ...(issueNumber !== undefined
+              ? {
+                  reuseExisting: (trees) =>
+                    pickIssueWorktree(issueNumber, trees),
+                }
+              : {}),
+          },
+          { layout },
+        );
         if (!created.ok) {
           return Response.json(
             { error: created.error },
@@ -5217,10 +5254,11 @@ export class DaemonServer {
         );
       }
       if (worktreeInfo?.created) {
+        const cwdArgument = `'${worktreeInfo.path.replace(/'/g, `'\\''`)}'`;
         const retry = moveInfo
-          ? `re-running has nothing left to move, so start an agent there with --cwd '${worktreeInfo.path}' instead`
+          ? `re-running has nothing left to move, so start an agent there with --cwd ${cwdArgument} instead`
           : worktreeRequest.value?.name === undefined
-            ? `re-running will create a numbered sibling, pass --worktree '${worktreeInfo.name}' to reuse this one`
+            ? `re-running will create a numbered sibling, start an agent with --cwd ${cwdArgument} to reuse this one`
             : "re-running the same command will reuse it";
         notes.push(
           `the worktree '${worktreeInfo.name}' was created at ${worktreeInfo.path} and left in place; ${retry}`,

@@ -52,6 +52,7 @@ import {
   type SourceRepo,
   type SourceRow,
 } from "./source-picker-rows";
+import { Text } from "./Text";
 
 /** Start is one filterable list across PRs and issues. Enter starts work or
  * opens the checkout already holding the source. `/` gives the input the
@@ -136,6 +137,7 @@ export interface SourcePickerProps {
    *  second agent into it. */
   onOpenWorktree: (target: {
     path: string;
+    sameRepoRegisteredRoots: readonly string[];
     cursor: string;
     filter: string;
   }) => void;
@@ -563,8 +565,16 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
       }
       const path = checkedOutPathFor(row, snapshot);
       const checkout = refreshed ? path : (path ?? row.checkedOutPath);
+      const sameRepoRegisteredRoots =
+        snapshot?.repos
+          .find((repo) => repo.repoRoot === row.repoRoot)
+          ?.worktrees.map((worktree) => worktree.path) ?? [];
       if (checkout) {
-        props.onOpenWorktree({ path: checkout, ...carry });
+        props.onOpenWorktree({
+          path: checkout,
+          sameRepoRegisteredRoots,
+          ...carry,
+        });
         return;
       }
       if (row.kind === "pr") {
@@ -952,13 +962,13 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
         backgroundColor={isCursor() ? theme.surface : undefined}
         onMouseDown={() => setCursorKey(row.key)}
       >
-        <text fg={theme.mauve}>
+        <Text fg={theme.mauve}>
           {sessions().some((s) => s.id === props.activeSessionId) ? "▎" : " "}
-        </text>
-        <text
+        </Text>
+        <Text
           fg={theme.overlay}
-        >{`${marks().has(row.key) ? "✓" : index() <= 9 ? index() : " "} `}</text>
-        <text
+        >{`${marks().has(row.key) ? "✓" : index() <= 9 ? index() : " "} `}</Text>
+        <Text
           fg={
             status() === "waiting"
               ? theme.red
@@ -968,13 +978,13 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
           }
         >
           {glyph()}{" "}
-        </text>
-        <text fg={sourceRowDim(row) ? theme.subtext : theme.text}>
+        </Text>
+        <Text fg={sourceRowDim(row) ? theme.subtext : theme.text}>
           {label()}
-        </text>
+        </Text>
         <box flexGrow={1} />
         <For each={metadata()}>
-          {(phrase) => <text fg={phrase.fg}>{phrase.text}</text>}
+          {(phrase) => <Text fg={phrase.fg}>{phrase.text}</Text>}
         </For>
       </box>
     );
@@ -996,9 +1006,9 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
     >
       <Show when={!props.embedded}>
         <box width="100%" height={1} flexDirection="row">
-          <text fg={theme.text} attributes={1}>
+          <Text fg={theme.text} attributes={1}>
             {title()}
-          </text>
+          </Text>
         </box>
       </Show>
 
@@ -1008,9 +1018,9 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
           the session picker teaches it too. */}
       <Show when={filtering()}>
         <box width="100%" height={1} flexDirection="row">
-          <text fg={theme.overlay} width={2}>
+          <Text fg={theme.overlay} width={2}>
             {"/ "}
-          </text>
+          </Text>
           <input
             value={filter()}
             onInput={(value: string) => {
@@ -1023,6 +1033,7 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
             placeholder="Filter pull requests and issues..."
             placeholderColor={theme.overlay}
             textColor={theme.text}
+            focusedTextColor={theme.text}
             cursorColor={theme.blue}
             backgroundColor="transparent"
             focusedBackgroundColor="transparent"
@@ -1034,10 +1045,10 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
       <box flexGrow={1} flexDirection="column">
         <Show when={phase() === "error"}>
           <box paddingTop={1} flexDirection="column">
-            <text fg={theme.red}>
+            <Text fg={theme.red}>
               {truncateText(error() ?? "", contentWidth())}
-            </text>
-            <text fg={theme.overlay}>R retry · q close</text>
+            </Text>
+            <Text fg={theme.overlay}>R retry · q close</Text>
           </box>
         </Show>
 
@@ -1046,9 +1057,9 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
             when={hasRows(visible())}
             fallback={
               <box paddingTop={1}>
-                <text fg={emptyState().fg}>
+                <Text fg={emptyState().fg}>
                   {truncateText(emptyState().text, contentWidth())}
-                </text>
+                </Text>
               </box>
             }
           >
@@ -1102,9 +1113,9 @@ export const SourcePicker: Component<SourcePickerProps> = (props) => {
       </box>
 
       <box width="100%" height={1} flexDirection="row">
-        <text fg={note() ? theme.yellow : theme.overlay}>
+        <Text fg={note() ? theme.yellow : theme.overlay}>
           {truncateText(note() ?? sourceNotice() ?? hints(), contentWidth())}
-        </text>
+        </Text>
       </box>
     </box>
   );

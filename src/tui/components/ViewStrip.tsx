@@ -2,6 +2,7 @@ import { For, Show, type Component } from "solid-js";
 import type { RepoFacts } from "../../daemon/repo-facts";
 import { VIEWS, type View } from "../actions";
 import { theme } from "../theme";
+import { Text } from "./Text";
 import type { ConnectionState } from "../utils/sse";
 import { displayWidth, truncateText } from "../utils/format";
 import { useSharedTerminalDimensions } from "../utils/use-shared-dimensions";
@@ -238,38 +239,38 @@ export const ViewStrip: Component<
             flexDirection="row"
             onMouseDown={() => props.onView(view)}
           >
-            <text fg={view === props.view ? theme.blue : theme.border}>
+            <Text fg={view === props.view ? theme.blue : theme.border}>
               {view === props.view ? "━━ " : "── "}
-            </text>
-            <text fg={view === props.view ? theme.text : theme.subtext}>
+            </Text>
+            <Text fg={view === props.view ? theme.text : theme.subtext}>
               <Show when={view === props.view} fallback={VIEW_NAMES[view]}>
                 <b>{VIEW_NAMES[view]}</b>
               </Show>
-            </text>
+            </Text>
             {/* Guarded: an empty text node still paints one column. */}
             <Show when={countText(view)}>
-              <text fg={theme.overlay}>{countText(view)}</text>
+              <Text fg={theme.overlay}>{countText(view)}</Text>
             </Show>
-            <text> </text>
+            <Text> </Text>
           </box>
         )}
       </For>
       {/* The gap before the right end rides on the rule's text: the renderer
           drops a text node's leading space and keeps a trailing one. */}
-      <text fg={theme.border}>
+      <Text fg={theme.border}>
         {"─".repeat(fill()) + (rightWidth() ? " " : "")}
-      </text>
+      </Text>
       {/* One text node per item, each carrying the separator or closing
           rule that FOLLOWS it: dynamic children inside a single text node
           are appended rather than inserted in place (a signal arriving after
           the scope drew behind it), and a node's leading space is dropped. */}
       <For each={rightNodes()}>
         {(node) => (
-          <text>
+          <Text>
             <For each={node}>
               {(span) => <span style={{ fg: span.fg }}>{span.text}</span>}
             </For>
-          </text>
+          </Text>
         )}
       </For>
     </box>

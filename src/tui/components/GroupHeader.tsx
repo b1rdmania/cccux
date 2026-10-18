@@ -10,6 +10,7 @@ import { MouseButton, type MouseEvent } from "@opentui/core";
 import { displayWidth, truncateText } from "../utils/format";
 import { useSharedTerminalDimensions } from "../utils/use-shared-dimensions";
 import { theme } from "../theme";
+import { Text } from "./Text";
 
 interface GroupHeaderProps {
   label: string;
@@ -175,7 +176,7 @@ export const GroupHeader: Component<GroupHeaderProps> = (props) => {
         }
       }}
     >
-      <text wrapMode="none" flexShrink={0}>
+      <Text wrapMode="none" flexShrink={0}>
         <For each={parts()}>
           {(part) => (
             <span style={{ fg: part.color }}>
@@ -185,7 +186,7 @@ export const GroupHeader: Component<GroupHeaderProps> = (props) => {
             </span>
           )}
         </For>
-      </text>
+      </Text>
       {/* The header IS the divider: a rule fills what the label leaves, so a
           group boundary costs one line, not a rule line plus a label line.
           Layout sizes it, not `width`, so it ends where the rows do however
@@ -193,9 +194,9 @@ export const GroupHeader: Component<GroupHeaderProps> = (props) => {
           measures wider than `displayWidth` thought eats the rule instead of
           wrapping the line. */}
       <box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
-        <text fg={c(theme.border)} wrapMode="none">
+        <Text fg={c(theme.border)} wrapMode="none">
           {` ${"─".repeat(RULE_LENGTH)}`}
-        </text>
+        </Text>
       </box>
     </box>
   );
