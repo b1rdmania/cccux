@@ -22,6 +22,7 @@ import {
   MAX_PROMPTS_TOTAL_BYTES,
 } from "../lib/config";
 import { deriveProject } from "./project-derivation";
+import { classifyClaudeUserEntry } from "./adapters/claude/user-entry";
 
 /**
  * Append a user prompt to the capped prompt index. Trims and truncates the
@@ -93,29 +94,43 @@ export function processEntry(
   entry: LogEntry,
   currentState: SessionState,
 ): SessionState {
-  // Each case re-casts `entry`: LogEntry's open-ended final member
-  // (BaseLogEntry & { type: string }) defeats discriminant narrowing on the
-  // literal `type` values below, so TS won't narrow `entry` on its own.
+  const next = processEntryByType(entry, currentState);
+  // Claude writes some entries with no `timestamp` (`mode`, `last-prompt`,
+  // `ai-title`, `file-history-snapshot`, ...), and on a first turn they land
+  // right after the prompt. The cascade reads `lastActivityAt` as the log's
+  // freshness, so erasing it there scores the log at 0 and lets a marker's
+  // idle from before the prompt win mid-turn.
+  if (entry.timestamp === undefined) {
+    return { ...next, lastActivityAt: currentState.lastActivityAt };
+  }
+  return next;
+}
+
+function processEntryByType(
+  entry: LogEntry,
+  currentState: SessionState,
+): SessionState {
   switch (entry.type) {
     case "progress":
-      return processProgressEntry(entry as ProgressLogEntry, currentState);
+      return processProgressEntry(entry, currentState);
     case "result":
-      return processResultEntry(entry as ResultLogEntry, currentState);
+      return processResultEntry(entry, currentState);
     case "assistant":
-      return processAssistantEntry(entry as AssistantLogEntry, currentState);
+      return processAssistantEntry(entry, currentState);
     case "user":
-      return processUserEntry(entry as UserLogEntry, currentState);
+      return processUserEntry(entry, currentState);
     case "system":
-      return processSystemEntry(entry as SystemLogEntry, currentState);
+      return processSystemEntry(entry, currentState);
     case "summary":
-      return processSummaryEntry(entry as SummaryLogEntry, currentState);
+      return processSummaryEntry(entry, currentState);
     case "queue-operation":
-      return processQueueOperationEntry(
-        entry as QueueOperationLogEntry,
-        currentState,
-      );
-    default:
+      return processQueueOperationEntry(entry, currentState);
+    case "unknown":
       return { ...currentState, lastActivityAt: entry.timestamp };
+    default: {
+      const exhaustive: never = entry;
+      return exhaustive;
+    }
   }
 }
 
@@ -305,14 +320,33 @@ function processAssistantEntry(
     };
   }
 
+  // Claude Code writes one transcript entry per content block and stamps each
+  // with the message's FINAL stop_reason, so a `thinking` block's entry can
+  // carry `end_turn` while the `text` block that answers is still being
+  // generated (it can land seconds later, under the same `message.id`).
+  // Ending the turn there idles the row early, marks it unread, and fires
+  // "Finished" before there is a reply. So a thinking-only entry is never
+  // terminal; the entry after it is. None of ~280 sampled split messages
+  // ended on thinking alone, and one that did would still resolve:
+  // `turn_duration` (`processSystemEntry`) in interactive sessions,
+  // otherwise the reconciler's stale-pane sweep, the dead-process check, or
+  // the no-PID mtime net (`resolveDeadProcessState`).
+  const thinkingOnly =
+    content.length > 0 &&
+    content.every(
+      (block) =>
+        block.type === "thinking" || block.type === "redacted_thinking",
+    );
+
   // `stop_sequence` is terminal like `end_turn`: the model stopped at a
   // configured stop string, so the turn is over. Background agents commonly
   // end their transcripts with it (observed live), and treating it as
   // terminal makes their completion instant instead of waiting out the
   // silence-based stale sweep.
   if (
-    entry.message.stop_reason === "end_turn" ||
-    entry.message.stop_reason === "stop_sequence"
+    !thinkingOnly &&
+    (entry.message.stop_reason === "end_turn" ||
+      entry.message.stop_reason === "stop_sequence")
   ) {
     return {
       ...newState,
@@ -345,18 +379,33 @@ function processUserEntry(
   const version = entry.version || currentState.version;
   const gitBranch = entry.gitBranch || currentState.gitBranch;
 
+  // Claude's own bookkeeping (a local command like `/clear` or `/model`,
+  // isMeta context) runs no turn, so it moves neither the status nor the
+  // prompt index. Nor `lastActivityAt`: the cascade reads it as the log's
+  // freshness, and bumping it for an entry that says nothing about status
+  // would let a stale log status outrank a newer marker.
+  const kind = classifyClaudeUserEntry(entry);
+  if (kind === "bookkeeping") {
+    return { ...currentState, cwd, project, version, gitBranch };
+  }
+
   // When user provides input after ExitPlanMode, exit plan mode
   const inPlanMode =
-    currentState.pendingTool === "ExitPlanMode"
+    kind !== "injected" && currentState.pendingTool === "ExitPlanMode"
       ? false
       : currentState.inPlanMode;
 
-  // If content is an array, it's tool results
-  if (Array.isArray(content)) {
+  // Tool results resume the turn they interrupted. An injected message is
+  // handled the same way with no results: it starts a turn (which may be all
+  // thinking and text, so nothing else would mark it working), but it is not
+  // user input and must not clear a plan/question wait.
+  if (Array.isArray(content) || kind === "injected") {
     // Extract tool_use_ids from the results
-    const resultIds = (content as ToolResultContent[])
-      .filter((c) => c.type === "tool_result" && c.tool_use_id)
-      .map((c) => c.tool_use_id);
+    const resultIds = Array.isArray(content)
+      ? (content as ToolResultContent[])
+          .filter((c) => c.type === "tool_result" && c.tool_use_id)
+          .map((c) => c.tool_use_id)
+      : [];
 
     // Remove resolved tool IDs from pending list
     let remainingPendingIds = currentState.pendingToolIds || [];
@@ -412,7 +461,8 @@ function processUserEntry(
     };
   }
 
-  // User message - Claude will start working
+  // User message - Claude will start working. A prompt-type slash command
+  // lands here too; its markup is the prompt the TUI reduces to `/name args`.
   // Also clear hasActiveSubagent on new user message (session reset)
   // Track lastUserInputAt for stable sorting (only actual user input, not tool results)
   return {
@@ -441,9 +491,17 @@ function processSystemEntry(
   entry: SystemLogEntry,
   currentState: SessionState,
 ): SessionState {
+  // A Stop hook that blocks writes its summary right AFTER the "Stop hook
+  // feedback" entry that starts Claude's continuation, so that summary must
+  // not end the turn. It can't say it blocked (a hook that merely failed
+  // lists `hookErrors` too), but a failed hook's summary follows the end_turn
+  // that already ended the turn, so skipping every summary with errors is
+  // safe.
+  const hasHookErrors =
+    Array.isArray(entry.hookErrors) && entry.hookErrors.length > 0;
   if (
     entry.subtype === "turn_duration" ||
-    entry.subtype === "stop_hook_summary"
+    (entry.subtype === "stop_hook_summary" && !hasHookErrors)
   ) {
     return {
       ...currentState,

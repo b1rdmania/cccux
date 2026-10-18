@@ -31,6 +31,7 @@ import { MouseButton } from "@opentui/core";
 import { basename, resolve, sep } from "node:path";
 
 import { getDaemonUrl } from "../../lib/config";
+import { normalizePath } from "../../daemon/worktree-git";
 
 import type {
   PRState,
@@ -73,6 +74,7 @@ import { useSharedTerminalDimensions } from "../utils/use-shared-dimensions";
 import type { IconStyle } from "../../lib/icons";
 
 import { theme } from "../theme";
+import { Text } from "./Text";
 
 type Phase = "loading" | "list" | "confirm" | "running" | "done" | "error";
 
@@ -134,6 +136,9 @@ interface WorktreesPanelProps {
     existingWorktree: string | null;
     panelRepo: string | null;
     panelScope: string | null;
+    /** Registered paths from this destination's repo, used to resolve
+     *  ownership when one checkout is nested inside another. */
+    sameRepoRegisteredRoots: readonly string[];
     cursor?: string;
   }) => void;
   onReview?: (target: {
@@ -168,28 +173,24 @@ export function partitionSelection(
 export function worktreeHoldsPath(
   worktreePath: string,
   candidate: string,
+  sameRepoRegisteredRoots: readonly string[],
 ): boolean {
   if (!candidate) return false;
-  const root = resolve(worktreePath);
-  const path = resolve(candidate);
-  if (path === root) return true;
-  if (!path.startsWith(root + sep)) return false;
-  return !crossesNestedCheckout(path.slice(root.length + sep.length));
-}
+  const root = resolve(normalizePath(worktreePath));
+  const path = resolve(normalizePath(candidate));
+  if (path !== root && !path.startsWith(root + sep)) return false;
 
-const NESTED_CHECKOUT_SEGMENTS = [".claude", "worktrees"];
-
-function crossesNestedCheckout(relative: string): boolean {
-  const segments = relative.split(sep);
-  for (let i = 0; i + 2 < segments.length; i += 1) {
+  let deepest = root;
+  for (const registered of sameRepoRegisteredRoots) {
+    const registeredRoot = resolve(normalizePath(registered));
     if (
-      segments[i] === NESTED_CHECKOUT_SEGMENTS[0] &&
-      segments[i + 1] === NESTED_CHECKOUT_SEGMENTS[1]
+      registeredRoot.length > deepest.length &&
+      (path === registeredRoot || path.startsWith(registeredRoot + sep))
     ) {
-      return true;
+      deepest = registeredRoot;
     }
   }
-  return false;
+  return deepest === root;
 }
 
 function statusColor(status: SessionStatus): string {
@@ -435,19 +436,19 @@ const RemovalConfirm: Component<{
       justifyContent="center"
       alignItems="center"
     >
-      <text fg={theme.text}>
+      <Text fg={theme.text}>
         <strong>Remove worktrees?</strong>
-      </text>
+      </Text>
       <box height={1} />
       {/* Red only when uncommitted work is actually going, so the one
           irreversible case does not read like the routine one. */}
       <For each={headline()}>
         {(line) => (
-          <text fg={props.destructive ? theme.red : theme.subtext}>{line}</text>
+          <Text fg={props.destructive ? theme.red : theme.subtext}>{line}</Text>
         )}
       </For>
       <For each={details()}>
-        {(line) => <text fg={theme.overlay}>{line}</text>}
+        {(line) => <Text fg={theme.overlay}>{line}</Text>}
       </For>
       <box height={1} />
       <box flexDirection="row">
@@ -457,10 +458,10 @@ const RemovalConfirm: Component<{
             if (event.button === MouseButton.LEFT) props.onConfirm();
           }}
         >
-          <text fg={theme.green}>
+          <Text fg={theme.green}>
             <strong>Y</strong>
-          </text>
-          <text fg={theme.overlay}> {props.confirmLabel ?? "confirm"} </text>
+          </Text>
+          <Text fg={theme.overlay}> {props.confirmLabel ?? "confirm"} </Text>
         </box>
         <box
           flexDirection="row"
@@ -468,10 +469,10 @@ const RemovalConfirm: Component<{
             if (event.button === MouseButton.LEFT) props.onCancel();
           }}
         >
-          <text fg={theme.red}>
+          <Text fg={theme.red}>
             <strong>N</strong>
-          </text>
-          <text fg={theme.overlay}> {props.cancelLabel ?? "cancel"}</text>
+          </Text>
+          <Text fg={theme.overlay}> {props.cancelLabel ?? "cancel"}</Text>
         </box>
       </box>
     </box>
@@ -798,6 +799,13 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
       return next;
     });
   }
+  function registeredPaths(repoRoot: string): string[] {
+    return (
+      repos()
+        .find((repo) => repo.repoRoot === repoRoot)
+        ?.worktrees.map((row) => row.path) ?? []
+    );
+  }
   function activate(item: Item) {
     if (item.kind === "header") {
       toggleGroup(item.repoRoot);
@@ -808,6 +816,7 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
       props.onSpawn({
         cwd: item.row.path,
         existingWorktree: item.row.isMain ? null : item.row.path,
+        sameRepoRegisteredRoots: registeredPaths(item.row.repoRoot),
         panelRepo: scope(),
         panelScope: scope(),
       });
@@ -1207,22 +1216,22 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
         backgroundColor={cursor() === entry.key ? theme.surface : undefined}
         onMouseDown={() => setCursor(entry.key)}
       >
-        <text fg={theme.mauve}>
+        <Text fg={theme.mauve}>
           {rowSessions(entry).some((s) => s.id === props.activeSessionId)
             ? "▎"
             : " "}
-        </text>
-        <text
+        </Text>
+        <Text
           fg={theme.overlay}
-        >{`${marks().has(entry.key) ? "✓" : index() <= 9 ? index() : " "} `}</text>
-        <text fg={status() === "idle" ? theme.overlay : statusColor(status())}>
+        >{`${marks().has(entry.key) ? "✓" : index() <= 9 ? index() : " "} `}</Text>
+        <Text fg={status() === "idle" ? theme.overlay : statusColor(status())}>
           {glyph()}{" "}
-        </text>
+        </Text>
         <For each={segments()}>
-          {(segment) => <text fg={segment.fg}>{segment.text}</text>}
+          {(segment) => <Text fg={segment.fg}>{segment.text}</Text>}
         </For>
         <box flexGrow={1} />
-        <text fg={theme.subtext}>{right()}</text>
+        <Text fg={theme.subtext}>{right()}</Text>
       </box>
     );
   };
@@ -1241,45 +1250,45 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
       paddingRight={1}
     >
       <Show when={!props.embedded}>
-        <text fg={theme.text}>
+        <Text fg={theme.text}>
           <b>Worktrees</b>
-        </text>
+        </Text>
       </Show>
       <box flexGrow={1} flexDirection="column">
         <Show when={phase() === "loading"}>
-          <text fg={theme.overlay}>Reading worktrees…</text>
+          <Text fg={theme.overlay}>Reading worktrees…</Text>
         </Show>
         <Show when={phase() === "running"}>
-          <text fg={theme.yellow}>Removing worktrees…</text>
+          <Text fg={theme.yellow}>Removing worktrees…</Text>
         </Show>
         <Show when={phase() === "done"}>
           <scrollbox flexGrow={1} ref={resultsBox}>
             <For each={result()?.outcomes ?? []}>
               {(outcome) => (
                 <box flexDirection="column" flexShrink={0}>
-                  <text fg={outcome.error ? theme.yellow : theme.text}>
+                  <Text fg={outcome.error ? theme.yellow : theme.text}>
                     {basename(outcome.path)}:{" "}
                     {outcome.removed ? "removed" : "kept"}
-                  </text>
+                  </Text>
                   <Show when={outcome.error}>
-                    <text fg={theme.yellow}>{outcome.error}</text>
+                    <Text fg={theme.yellow}>{outcome.error}</Text>
                   </Show>
                   <For each={outcome.steps}>
                     {(step) => (
-                      <text fg={step.ok ? theme.subtext : theme.yellow}>
+                      <Text fg={step.ok ? theme.subtext : theme.yellow}>
                         {step.ok ? "✓" : "!"} {step.detail}
-                      </text>
+                      </Text>
                     )}
                   </For>
                 </box>
               )}
             </For>
             <For each={result()?.state.filter((s) => s.error) ?? []}>
-              {(entry) => <text fg={theme.yellow}>{entry.error}</text>}
+              {(entry) => <Text fg={theme.yellow}>{entry.error}</Text>}
             </For>
-            <text fg={theme.overlay}>
+            <Text fg={theme.overlay}>
               j/k scroll · Enter returns · R refresh
-            </text>
+            </Text>
           </scrollbox>
         </Show>
         <Show when={["list", "confirm", "dirty"].includes(phase())}>
@@ -1332,7 +1341,7 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
           </scrollbox>
         </Show>
       </box>
-      <text fg={note() || scanError() ? theme.yellow : theme.overlay}>
+      <Text fg={note() || scanError() ? theme.yellow : theme.overlay}>
         {truncateText(
           note() ||
             scanError() ||
@@ -1351,7 +1360,7 @@ export const WorktreesPanel: Component<WorktreesPanelProps> = (props) => {
               ),
           width(),
         )}
-      </text>
+      </Text>
       <Show when={phase() === "dirty" && dirtyQueue()[0]}>
         {(candidate: () => PruneCandidate) => (
           <RemovalConfirm

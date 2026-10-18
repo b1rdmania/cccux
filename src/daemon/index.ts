@@ -40,7 +40,7 @@ import { getAgents } from "../lib/agents";
 import { getPreferences, type Preferences } from "../lib/preferences";
 import { tmuxCaptureSync } from "../lib/tmux-exec";
 import { markDaemonProcess } from "../lib/tmux-socket";
-import { VersionResolver, parseShellTokens } from "./version-resolver";
+import { VersionResolver, needsNativeExecutable } from "./version-resolver";
 import { readClaudeHistory } from "./adapters/claude/history";
 import {
   getAllSessionPidMarkers,
@@ -57,7 +57,10 @@ import type {
 import {
   discoverAgentProcesses,
   discoverAgentProcessesOrThrow,
+  parseLsofExecutable,
   ProcessDiscoveryError,
+  readProcfsExecutable,
+  type ProcessExecutable,
 } from "./processes";
 import { ScanHealth } from "./scan-health";
 import {
@@ -83,9 +86,11 @@ import {
   type ReconcilerDeps,
 } from "./state-reconciler";
 import { AttentionTracker } from "./attention-tracker";
+import { AttentionTransitions } from "./attention-transitions";
 import { redirectStdioToLogFile } from "./log-redirect";
 import { InvocationManager } from "./invocation-manager";
 import { Notifier, buildStateChangedPayload } from "./notifier";
+import { StatusBar } from "./status-bar";
 import { createNotifyDelivery } from "./notify-delivery";
 import { performJump, type JumpDeps } from "./notify-jump";
 import {
@@ -201,6 +206,7 @@ export class Daemon {
   private hookManager = new HookManager();
   private versionResolver = new VersionResolver();
   private attentionTracker = new AttentionTracker();
+  private attentionTransitions: AttentionTransitions;
   private claudeRuntimeMode: ClaudeRuntimeMode = "claude-no-hooks";
   /** Latest scan's ProcessTree, reused by off-scan consumers so marker
    * events don't re-spawn `ps` on every fire. Null before first scan. */
@@ -222,6 +228,7 @@ export class Daemon {
    * feature is gated off (no watchers, no resync, zero overhead). */
   private backgroundSource: ClaudeBackgroundSource | null = null;
   private notifier: Notifier;
+  private statusBar: StatusBar | null = null;
   /** Shared notification delivery closure (Notifier + stale-press re-notify).
    *  Set in the constructor before the server, which needs the action runner
    *  that depends on it. */
@@ -331,10 +338,10 @@ export class Daemon {
       this.hookManager.register(adapter);
     }
 
-    this.sessionManager.on("change", (event) => {
-      if (event.type === "removed" && event.sessionId) {
-        this.attentionTracker.removeSession(event.sessionId);
-      }
+    this.attentionTransitions = new AttentionTransitions({
+      sessionManager: this.sessionManager,
+      tracker: this.attentionTracker,
+      getActivePaneId,
     });
 
     this.notifier = new Notifier({
@@ -479,6 +486,7 @@ export class Daemon {
     // the constructor wires before this line.
     this.server.start();
     this.server.startRepoFacts();
+    this.attentionTransitions.start();
     this.notifier.start();
 
     // Migrate/discover existing sessions before starting watcher
@@ -514,6 +522,8 @@ export class Daemon {
       this.copilotWatcher.ready,
     ]);
 
+    // Capture the initial scan's topology/server state without publishing yet.
+    this.statusBar = new StatusBar(this.sessionManager, preferences);
     // Initial scan - also matches existing sessions to panes
     DaemonPerf.startReporter(5);
     await this.scan();
@@ -529,6 +539,9 @@ export class Daemon {
 
     // Set up signal handlers
     this.setupSignalHandlers();
+
+    // Publish only after startup succeeds, with the initial scan's topology.
+    this.statusBar.start();
 
     this.running = true;
     console.log(`Daemon started with PID ${process.pid}`);
@@ -552,7 +565,9 @@ export class Daemon {
     await this.copilotWatcher.stop();
     await this.hookManager.stop();
     await this.backgroundSource?.stop();
+    this.attentionTransitions.stop();
     this.notifier.stop();
+    await this.statusBar?.stop();
     this.server.stop();
 
     // Remove PID file
@@ -587,6 +602,7 @@ export class Daemon {
         ProcessTree.build(),
       ]);
       const panes = paneScan.panes;
+      this.statusBar?.updatePanes(panes, paneScan.noServer !== null);
       if (paneScan.noServer) this.recordNoTmuxServer(paneScan.noServer);
 
       // Update pane cache for API response enrichment
@@ -820,7 +836,7 @@ export class Daemon {
    */
   private async getLsofLines(pid: number): Promise<string[]> {
     DaemonPerf.incSubprocessSpawn("lsof-session");
-    const proc = Bun.spawn(["lsof", "-p", String(pid), "-Fn"], {
+    const proc = Bun.spawn(["lsof", "-p", String(pid), "-FnDi"], {
       stdout: "pipe",
       stderr: "ignore",
     });
@@ -879,21 +895,29 @@ export class Daemon {
     if (!agent) return;
 
     try {
-      let version = await this.versionResolver.resolve(agent, processCommand);
-
-      // Some CLIs are launched by bare command names that are absent from daemon PATH.
-      // Retry with PID-derived executable path when command token is not absolute.
-      if (!version) {
-        const firstToken = parseShellTokens(processCommand)[0];
-        if (firstToken && !firstToken.includes("/")) {
-          const executablePath = await this.resolveProcessExecutablePath(pid);
-          if (executablePath) {
-            version = await this.versionResolver.resolve(agent, executablePath);
-          }
-        }
+      const executable = await this.resolveProcessExecutable(pid);
+      // An agent whose Approve/Deny keys are gated on its version must not
+      // take its version from whichever installation the daemon's PATH holds:
+      // a 2.x pane reading a 1.x PATH binary would re-arm 1.x keys that
+      // approve on 2.x. Unless the running executable is known to be the
+      // agent itself, stay versionless (no buttons) rather than guess.
+      if (
+        agent.notificationActions?.approvalKeysVerifiedThroughMajor !==
+          undefined &&
+        needsNativeExecutable(agent, processCommand, executable)
+      ) {
+        return;
       }
+      const version = await this.versionResolver.resolve(
+        agent,
+        processCommand,
+        executable,
+      );
 
-      if (version) {
+      // The probe is async: if the pane's process changed meanwhile (a 1.x
+      // quit and a 2.x launched in its place), this version describes the
+      // old process, and labeling the new one with it re-arms 1.x keys.
+      if (version && this.sessionManager.getSession(sessionId)?.pid === pid) {
         this.sessionManager.updateSession(sessionId, { version });
       }
     } catch {
@@ -901,25 +925,14 @@ export class Daemon {
     }
   }
 
-  private async resolveProcessExecutablePath(
+  private async resolveProcessExecutable(
     pid: number,
-  ): Promise<string | undefined> {
-    try {
-      const lines = await this.getLsofLines(pid);
-      let expectTxtPath = false;
+  ): Promise<ProcessExecutable | undefined> {
+    const procfs = await readProcfsExecutable(pid);
+    if (procfs) return procfs;
 
-      for (const line of lines) {
-        if (line === "ftxt") {
-          expectTxtPath = true;
-          continue;
-        }
-        if (expectTxtPath) {
-          expectTxtPath = false;
-          if (line.startsWith("n") && line.length > 1) {
-            return line.slice(1);
-          }
-        }
-      }
+    try {
+      return parseLsofExecutable(await this.getLsofLines(pid)) ?? undefined;
     } catch {}
 
     return undefined;

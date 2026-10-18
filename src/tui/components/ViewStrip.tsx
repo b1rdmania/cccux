@@ -2,6 +2,7 @@ import { For, Show, type Component } from "solid-js";
 import type { RepoFacts } from "../../daemon/repo-facts";
 import { VIEWS, type View } from "../actions";
 import { theme } from "../theme";
+import { Text } from "./Text";
 import type { ConnectionState } from "../utils/sse";
 import { displayWidth, truncateText } from "../utils/format";
 import { useSharedTerminalDimensions } from "../utils/use-shared-dimensions";
@@ -165,15 +166,15 @@ export const ViewStrip: Component<
             flexDirection="row"
             onMouseDown={() => props.onView(view)}
           >
-            <text
+            <Text
               bg={view === props.view ? theme.surface : undefined}
               fg={view === props.view ? theme.text : theme.subtext}
             >
               <Show when={view === props.view} fallback={` ${label(view)} `}>
                 <b>{` ${label(view)} `}</b>
               </Show>
-            </text>
-            <text> </text>
+            </Text>
+            <Text> </Text>
           </box>
         )}
       </For>
@@ -181,12 +182,12 @@ export const ViewStrip: Component<
       <box height={1} flexDirection="row">
         <For each={right()}>
           {(seg, i) => (
-            <text>
+            <Text>
               <Show when={i() > 0}>
                 <span style={{ fg: theme.overlay }}>{SEP}</span>
               </Show>
               <span style={{ fg: seg.fg }}>{seg.text}</span>
-            </text>
+            </Text>
           )}
         </For>
       </box>
