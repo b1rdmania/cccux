@@ -1,4 +1,4 @@
-import { BIN, CHAIR, CHAIR_ART } from "./lib/chair";
+import { BIN, CHAIR, CHAIR_ART, CHAIRS } from "./lib/chair";
 import { Command } from "commander";
 import pkg from "../package.json" with { type: "json" };
 import { createDaemonCommand } from "./commands/daemon";
@@ -41,6 +41,24 @@ export function createProgram(): Command {
 
   if (CHAIR) {
     program.addHelpText("beforeAll", `\n${CHAIR_ART.join("\n")}\n`);
+    program
+      .command("chair [name]")
+      .description(`Print a chair (${Object.keys(CHAIRS).join(", ")}, or all)`)
+      .action((name?: string) => {
+        if (name === "all") {
+          for (const [n, art] of Object.entries(CHAIRS)) {
+            console.log(`${n}\n\n${art.join("\n")}\n`);
+          }
+          return;
+        }
+        const art = name ? CHAIRS[name] : CHAIR_ART;
+        if (!art) {
+          console.error(`No chair called ${name}. Sit on the floor.`);
+          process.exitCode = 1;
+          return;
+        }
+        console.log(art.join("\n"));
+      });
   }
 
   program.addCommand(createDaemonCommand());

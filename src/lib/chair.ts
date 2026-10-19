@@ -58,14 +58,56 @@ export function chairShush(): string {
   return SHUSH[Math.floor(Math.random() * SHUSH.length)]!;
 }
 
-export const CHAIR_ART = [
-  "   ┌─────┐",
-  "   │     │",
-  "   │     │",
-  "   └──┬──┘",
-  "╭─────┴─────╮  ← you",
-  "╰─────┬─────╯",
-  "      │",
-  " ╶────┼────╴",
-  " ●    ●    ●",
-];
+/** One chair per launch. All of them face the agents. */
+export const CHAIRS: Record<string, string[]> = {
+  office: [
+    "   ┌─────┐",
+    "   │     │",
+    "   │     │",
+    "   └──┬──┘",
+    "╭─────┴─────╮  ← you",
+    "╰─────┬─────╯",
+    "      │",
+    " ╶────┼────╴",
+    " ●    ●    ●",
+  ],
+  director: [
+    "┌───────────┐",
+    "│  WATCHER  │",
+    "├─┬───────┬─┤",
+    "│ │       │ │  ← you",
+    "╪═╧═══════╧═╪",
+    "│ ╲       ╱ │",
+    "│   ╲   ╱   │",
+    "│     ╳     │",
+    "│   ╱   ╲   │",
+    "╵ ╱       ╲ ╵",
+  ],
+  corner: [
+    "│",
+    "│   ╭─────────╮",
+    "│ ╭─┤         ├─╮",
+    "│ │ │         │ │",
+    "│ │ │         │ │",
+    "│ │ ╰─────────╯ │  ← you",
+    "│ │▁▁▁▁▁▁▁▁▁▁▁▁▁│",
+    "│ ╰─┬─────────┬─╯",
+    "│   ╵         ╵",
+    "└──────────────────",
+  ],
+  executive: [
+    "  ╭─────────╮",
+    "  │ ░░░░░░░ │",
+    "  │ ░░░░░░░ │",
+    "  │ ░░░░░░░ │",
+    " ┌┴─────────┴┐",
+    " │▀▀▀▀▀▀▀▀▀▀▀│  ← you",
+    " └─────┬─────┘",
+    "   ╶───┼───╴",
+    "   ●   ●   ●",
+  ],
+};
+
+const names = Object.keys(CHAIRS);
+export const CHAIR_ART: string[] =
+  CHAIRS[names[Math.floor(Math.random() * names.length)]!]!;

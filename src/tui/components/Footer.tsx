@@ -208,7 +208,9 @@ export const Footer: Component<FooterProps> = (props) => {
           </Text>
         </Match>
         <Match when={props.confirmMode}>
-          <Text fg={theme.overlay}>y confirm · n/Esc cancel</Text>
+          <Text fg={theme.overlay}>
+            {CHAIR ? "y do it · n let them be" : "y confirm · n/Esc cancel"}
+          </Text>
         </Match>
         <Match when={props.newSessionMode}>
           <Text fg={theme.overlay}>
