@@ -2,6 +2,7 @@ import type { Component } from "solid-js";
 import { Switch, Match } from "solid-js";
 import { useSharedTerminalDimensions } from "../utils/use-shared-dimensions";
 import { DEFAULT_GROUP_BY, type GroupBy } from "../../lib/preferences";
+import { CHAIR, HANDS } from "../../lib/chair";
 import { theme } from "../theme";
 import { Text } from "./Text";
 
@@ -159,7 +160,7 @@ export function defaultHints(props: {
     { text: `b group:${props.groupBy ?? DEFAULT_GROUP_BY}`, rank: 1 },
     { text: "P preview", rank: 1 },
     { text: "r restart", rank: 1 },
-    { text: "x kill", rank: 1 },
+    { text: CHAIR ? "x intervene" : "x kill", rank: 1 },
     // Rank 1, and rightmost within it, so it is the FIRST hint a narrowing
     // terminal gives up. `W` was previously taught only by the help overlay,
     // which is why it needs a home here at all; it is also the one action on
@@ -200,7 +201,11 @@ export const Footer: Component<FooterProps> = (props) => {
           <Text fg={theme.overlay}>? or Esc close</Text>
         </Match>
         <Match when={props.previewFocused}>
-          <Text fg={theme.overlay}>tab/esc exit focus · keys sent to pane</Text>
+          <Text fg={theme.overlay}>
+            {CHAIR && !HANDS
+              ? "tab/esc back to your chair · y/n/1-3/enter only"
+              : "tab/esc exit focus · keys sent to pane"}
+          </Text>
         </Match>
         <Match when={props.confirmMode}>
           <Text fg={theme.overlay}>y confirm · n/Esc cancel</Text>

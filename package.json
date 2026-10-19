@@ -1,17 +1,17 @@
 {
-  "name": "ccmux",
+  "name": "cccux",
   "version": "1.4.4",
   "private": true,
-  "description": "Run your AI coding agents in tmux: jump to the one that needs you, spawn worktrees, hand work between sessions",
+  "description": "ccmux, but you're in the chair. Your agents do the work; you watch.",
   "license": "MIT",
   "author": "epilande",
   "repository": {
     "type": "git",
-    "url": "https://github.com/epilande/ccmux.git"
+    "url": "https://github.com/b1rdmania/cccux.git"
   },
-  "homepage": "https://github.com/epilande/ccmux",
+  "homepage": "https://github.com/b1rdmania/cccux",
   "bugs": {
-    "url": "https://github.com/epilande/ccmux/issues"
+    "url": "https://github.com/b1rdmania/cccux/issues"
   },
   "keywords": [
     "claude",
@@ -35,6 +35,7 @@
     "tsconfig.json"
   ],
   "bin": {
+    "cccux": "./bin/cccux",
     "ccmux": "./bin/ccmux"
   },
   "scripts": {

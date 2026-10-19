@@ -1,3 +1,4 @@
+import { BIN, CHAIR } from "./lib/chair";
 import { Command } from "commander";
 import pkg from "../package.json" with { type: "json" };
 import { createDaemonCommand } from "./commands/daemon";
@@ -30,9 +31,11 @@ export function createProgram(): Command {
   const program = new Command();
 
   program
-    .name("ccmux")
+    .name(BIN)
     .description(
-      "Track all your AI coding agents (Claude Code, Codex, Cursor, ...) in tmux and jump to the one that needs you",
+      CHAIR
+        ? "Your agents do the work. You sit in the corner and watch."
+        : "Track all your AI coding agents (Claude Code, Codex, Cursor, ...) in tmux and jump to the one that needs you",
     )
     .version(pkg.version);
 

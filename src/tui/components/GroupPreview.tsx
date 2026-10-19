@@ -15,6 +15,7 @@ import { useStatusIcon } from "../utils/useStatusIcon";
 import { formatRelativeTime, formatVersion, shortenCwd } from "../utils/format";
 import { theme } from "../theme";
 import { Text } from "./Text";
+import { chairLabel } from "../../lib/chair";
 
 interface GroupPreviewProps {
   header: { label: string; count: number; members: FilteredSession[] };
@@ -35,14 +36,14 @@ function staticSummaryParts(
     if (count > 0) {
       const icon = getStatusIcon("waiting", attention, iconStyle);
       parts.push({
-        text: `${icon} ${count} waiting`,
+        text: `${icon} ${count} ${chairLabel("waiting", "full") ?? "waiting"}`,
         color: getStatusColor("waiting", attention),
       });
     }
   }
   if (summary.idle > 0) {
     const icon = getStatusIcon("idle", null, iconStyle);
-    parts.push({ text: `${icon} ${summary.idle} idle`, color: theme.overlay });
+    parts.push({ text: `${icon} ${summary.idle} ${chairLabel("idle", "full") ?? "idle"}`, color: theme.overlay });
   }
   return parts;
 }
@@ -245,7 +246,7 @@ export const GroupPreview: Component<GroupPreviewProps> = (props) => {
         <box flexDirection="row" gap={2}>
           <Show when={summary().working > 0}>
             <Text fg={theme.peach}>
-              {workingIcon()} {summary().working} working
+              {workingIcon()} {summary().working} {chairLabel("working", "full") ?? "working"}
             </Text>
           </Show>
           <For each={summaryParts()}>

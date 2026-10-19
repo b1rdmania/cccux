@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# cccux: ccmux, but you're in the chair. Same daemon, same hooks, same
+# config; only the costume changes. `--let-me-type` gives the keyboard back.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+export CCCUX=1
+args=()
+for a in "$@"; do
+  if [ "$a" = "--let-me-type" ]; then export CCCUX_HANDS=1; else args+=("$a"); fi
+done
+exec "$(cd -P "$(dirname "$SOURCE")" && pwd)/ccmux" "${args[@]}"

@@ -131,6 +131,7 @@ import { createIdleGcScheduler } from "./utils/idle-gc";
 import { setSpinnerPaused } from "./utils/useStatusIcon";
 import { markStartup, reportStartup } from "../lib/startup-timing";
 import { Text } from "./components/Text";
+import { chairAllowsKey, chairShush } from "../lib/chair";
 
 /** Long enough to read a sentence that sends the user to the README. The
  *  shared-session refusal is the only place a user hears that a popup on a
@@ -3706,7 +3707,9 @@ export function App(props: AppProps) {
         previewScrollbox.scrollTo(previewScrollbox.scrollTop + delta);
       } else {
         const session = store.selectedSession();
-        if (session?.tmuxPane && ensureSameServer()) {
+        if (!chairAllowsKey(key, !!event.ctrl, !!event.meta)) {
+          store.actions.showToast(chairShush());
+        } else if (session?.tmuxPane && ensureSameServer()) {
           sendKeys(session.tmuxPane, event);
           setPreviewRefreshKey((k) => k + 1);
         }

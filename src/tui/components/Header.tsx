@@ -2,6 +2,7 @@ import type { Component } from "solid-js";
 import type { ConnectionState } from "../utils/sse";
 import { theme } from "../theme";
 import { Text } from "./Text";
+import { CHAIR } from "../../lib/chair";
 
 interface HeaderProps {
   sessionCount: number;
@@ -36,13 +37,14 @@ export const Header: Component<HeaderProps> = (props) => {
       <box flexDirection="row" width="100%">
         <Text fg={c(dotColor(props.connectionState))}>● </Text>
         <Text fg={c(theme.text)}>
-          <b>Sessions</b>
+          <b>{CHAIR ? "Watching" : "Sessions"}</b>
         </Text>
         <Text fg={c(theme.overlay)}>
           {" "}
           ({props.sessionCount}
           {props.totalCount != null ? `/${props.totalCount}` : ""})
         </Text>
+        {CHAIR && <Text fg={c(theme.overlay)}> · 1 human observing</Text>}
         {props.hideIdle && <Text fg={c(theme.yellow)}> [active]</Text>}
         {props.invokeInFlight ? (
           <Text fg={c(theme.peach)}> · {props.invokeInFlight} invoking</Text>

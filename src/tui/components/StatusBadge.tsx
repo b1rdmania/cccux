@@ -11,6 +11,7 @@ import type { StatusMode } from "../../lib/preferences";
 import { useStatusIcon } from "../utils/useStatusIcon";
 import { theme } from "../theme";
 import { Text } from "./Text";
+import { chairLabel } from "../../lib/chair";
 
 interface StatusBadgeProps {
   status: SessionStatus;
@@ -83,6 +84,11 @@ export const StatusBadge: Component<StatusBadgeProps> = (props) => {
       eff.status === "working" && eff.fromSubagent ? "agents" : eff.status;
     // Both unread and read display as "done"
     if (eff.status === "idle" && attn) labelText = "done";
+    const chair = chairLabel(
+      labelText as SessionStatus | "done" | "agents",
+      mode === "short" ? "short" : "full",
+    );
+    if (chair) labelText = chair;
     return `${icon()} ${mode === "short" ? labelText.slice(0, 4) : labelText.padEnd(7)}`;
   };
 
