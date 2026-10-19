@@ -15,7 +15,7 @@ Four real Claude Code agents. One real human. Guess which one wrote the code.
 ## The chairs
 
 <p align="center">
-  <img alt="A hotel room with an armchair in the corner facing the bed. Caption: every hotel got the cuck chair." src="docs/demo/every-hotel.jpg" width="340">
+  <img alt="A hotel room. An office chair at the desk faces the bed." src="docs/demo/cuck-chair.jpg" width="340">
 </p>
 
 Every hotel got the cuck chair. Now every terminal does too.
