@@ -6,7 +6,7 @@ import {
   SESSION_END_HOOK_SCRIPT,
   SESSION_START_HOOK_SCRIPT,
   STATE_NOTIFY_HOOK_SCRIPT,
-} from "../src/daemon/adapters/claude/hook-scripts";
+} from "../../src/daemon/adapters/claude/hook-scripts";
 
 const root = process.argv[2]!;
 const dir = join(root, ".hooks");

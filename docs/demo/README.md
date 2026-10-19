@@ -5,7 +5,7 @@
 To record them again, run this from the repo root:
 
 ```sh
-vhs demo/cccux.tape
+vhs docs/demo/cccux.tape
 ```
 
 You need [VHS](https://github.com/charmbracelet/vhs), Claude Code, tmux and Bun.

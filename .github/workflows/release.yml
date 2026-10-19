@@ -50,7 +50,7 @@ jobs:
       - run: bun install --os="*" --cpu="*"
       - run: bun run build
       # --no-compile-autoload-bunfig: keep bunfig's dev-only `preload`
-      # (@opentui/solid/preload) out of the compiled binary. build.ts already
+      # (@opentui/solid/preload) out of the compiled binary. scripts/build.ts already
       # applies it; at runtime it can't resolve and crashes ("preload not found").
       - run: bun build dist/index.js --compile --no-compile-autoload-bunfig --target=${{ matrix.target }} --outfile ${{ matrix.artifact }}
       - uses: actions/upload-artifact@v4

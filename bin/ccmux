@@ -13,7 +13,7 @@ cd "$(cd -P "$(dirname "$SOURCE")" && pwd)/.."
 # scripts/bench-startup.ts). "Current" means nothing that feeds the build
 # is newer, including the lockfile and build config, since the bundle
 # inlines dependencies.
-if [ -f dist/index.js ] && [ -z "$(find src package.json bun.lock bunfig.toml build.ts -newer dist/index.js -print -quit 2>/dev/null)" ]; then
+if [ -f dist/index.js ] && [ -z "$(find src package.json bun.lock bunfig.toml scripts/build.ts -newer dist/index.js -print -quit 2>/dev/null)" ]; then
   exec bun dist/index.js "$@"
 fi
 
@@ -23,9 +23,9 @@ fi
 # left by a killed build expires after 10 minutes. The stamp skips the
 # rebuild when one started within the last minute: during active editing,
 # every launch would otherwise burn a build the next edit invalidates.
-# Installs without build.ts (e.g. the published package) skip this and
+# Installs without scripts/build.ts (e.g. the published package) skip this and
 # just run source.
-if [ -f build.ts ]; then
+if [ -f scripts/build.ts ]; then
   LOCK=dist/.build-lock
   STAMP=dist/.build-stamp
   if [ -d "$LOCK" ] && [ -n "$(find "$LOCK" -maxdepth 0 -mmin +10 -print -quit 2>/dev/null)" ]; then

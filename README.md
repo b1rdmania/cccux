@@ -7,7 +7,7 @@ Your agents do the work. You sit in the chair in the corner and watch. Sometimes
 cccux is a fork of [ccmux](https://github.com/epilande/ccmux), the tmux session manager for AI coding agents. It keeps everything ccmux does, takes away your keyboard, and puts a chair on screen so you remember your place.
 
 <p align="center">
-  <img alt="cccux watching four Claude Code agents. One asks for permission. The human tries to type, the screen flashes SIT. DOWN., and the human is allowed to say yes." src="demo/cccux.gif" width="900">
+  <img alt="cccux watching four Claude Code agents. One asks for permission. The human tries to type, the screen flashes SIT. DOWN., and the human is allowed to say yes." src="docs/demo/cccux.gif" width="900">
 </p>
 
 Four real Claude Code agents. One real human. Guess which one wrote the code.
@@ -15,7 +15,7 @@ Four real Claude Code agents. One real human. Guess which one wrote the code.
 ## The chairs
 
 <p align="center">
-  <img alt="A hotel room with an armchair in the corner facing the bed. Caption: every hotel got the cuck chair." src="assets/every-hotel.jpg" width="340">
+  <img alt="A hotel room with an armchair in the corner facing the bed. Caption: every hotel got the cuck chair." src="docs/demo/every-hotel.jpg" width="340">
 </p>
 
 Every hotel got the cuck chair. Now every terminal does too.
@@ -147,7 +147,7 @@ The person changes with what the agents are doing. A live tally sits next to the
 </table>
 
 <p align="center">
-  <img alt="The cccux picker. An agent needs permission. The person in the chair leans forward. A toast says: that's not your call any more." src="demo/screenshot.png" width="900">
+  <img alt="The cccux picker. An agent needs permission. The person in the chair leans forward. A toast says: that's not your call any more." src="docs/demo/screenshot.png" width="900">
 </p>
 
 ## Modes
@@ -231,7 +231,7 @@ Say yes and you get "that's all we needed from you". Say no and you get "noted. 
 Press `x` and cccux asks "Intervene? are you sure? they seemed happy". Press `y` and it asks again.
 
 <p align="center">
-  <img alt="A dialog: They'll remember this. press y again if you really mean it. Y do it anyway, N let them be." src="demo/remember.png" width="900">
+  <img alt="A dialog: They'll remember this. press y again if you really mean it. Y do it anyway, N let them be." src="docs/demo/remember.png" width="900">
 </p>
 
 ## The receipt
@@ -297,7 +297,7 @@ Start your agents in tmux, then run `cccux`. Press Tab to look at an agent's pan
 
 cccux uses the same config, port and hooks as ccmux. Do not run the two daemons at the same time.
 
-The daemon, worktrees, handoffs and every other ccmux command are unchanged. The [ccmux README](docs/ccmux-README.md) has the full reference. The [demo](demo/) folder has the script that recorded the video.
+The daemon, worktrees, handoffs and every other ccmux command are unchanged. The [ccmux README](docs/ccmux-README.md) has the full reference. The [demo](docs/demo/) folder has the script that recorded the video.
 
 ## Credit
 

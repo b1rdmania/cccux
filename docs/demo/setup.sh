@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Starts four real Claude Code agents (Haiku) in throwaway repos on an
-# isolated tmux server, for recording demo/cccux.tape. User settings are
+# isolated tmux server, for recording docs/demo/cccux.tape. User settings are
 # skipped so the agents ask permission the way a stock install does.
 set -euo pipefail
 ROOT="${DEMO_ROOT:-/tmp/cccux-demo}"
 SOCK=cccux-demo
 export CCMUX_TMUX_SOCKET=$SOCK CCMUX_PORT=2272 CCMUX_HOME="$ROOT/ccmux"
-HERE="$(cd "$(dirname "$0")/.." && pwd)"
+HERE="$(cd "$(dirname "$0")/../.." && pwd)"
 t() { tmux -L "$SOCK" "$@"; }
 
 "$HERE/bin/ccmux" daemon stop >/dev/null 2>&1 || true
@@ -22,7 +22,7 @@ done
 printf 'const http = require("http");\nhttp.createServer((q, s) => s.end("ok")).listen(3000);\n' > "$ROOT/api-server/server.js"
 printf '<!doctype html><title>web</title><h1>Hello</h1>\n' > "$ROOT/web-app/index.html"
 
-bun "$HERE/demo/hooks.ts" "$ROOT"
+bun "$HERE/docs/demo/hooks.ts" "$ROOT"
 
 t new-session -d -s agents -x 200 -y 50 -c "$ROOT/api-server"
 t split-window -h -t agents -c "$ROOT/web-app"

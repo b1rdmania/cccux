@@ -41,10 +41,10 @@
   "scripts": {
     "start": "bun src/index.ts",
     "dev": "bun --watch src/index.ts",
-    "build": "bun run build.ts",
+    "build": "bun run scripts/build.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "knip": "knip",
+    "knip": "knip --config .config/knip.jsonc",
     "check:unused": "bun run knip"
   },
   "dependencies": {

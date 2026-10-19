@@ -133,7 +133,7 @@ The zsh `eval` has to come after `compinit`, since the script registers itself w
 | `ccmux picker`                              | Launch TUI with options (`--preview`, `--icons <style>`)                                                                         |
 | `ccmux picker --persistent`                 | Dashboard mode (stay open after switching sessions)                                                                              |
 | `ccmux spawn [agent]`                       | Spawn a new agent session in a tmux pane                                                                                         |
-| `ccmux invoke [agent] "prompt"`             | Run a single agent turn and write the response to stdout ([docs](docs/invoke.md))                                                |
+| `ccmux invoke [agent] "prompt"`             | Run a single agent turn and write the response to stdout ([docs](invoke.md))                                                |
 | `ccmux invoke list`                         | List active and recently-finished invocations (`-j` for JSON)                                                                    |
 | `ccmux invoke cancel <id>`                  | Cancel a running invocation by id (idempotent)                                                                                   |
 | `ccmux invoke result <id>`                  | Print an invocation's full captured output (subprocess agents only)                                                              |
@@ -144,8 +144,8 @@ The zsh `eval` has to come after `compinit`, since the script registers itself w
 | `ccmux review [id]`                         | Review a session's diff with [hunk](https://github.com/modem-dev/hunk) (defaults to cwd)                                         |
 | `ccmux kill <id>`                           | Kill a session's process                                                                                                         |
 | `ccmux restart <id>`                        | Kill and resume a session                                                                                                        |
-| `ccmux last <session-ref>`                  | Print a session's last response (`--turns <n>`, `--json`) ([docs](docs/handoff.md))                                              |
-| `ccmux handoff <from> [to]`                 | Hand a session's last response to another session (`--turns`, `--note`, `--spawn`, `--agent`, `--cwd`) ([docs](docs/handoff.md)) |
+| `ccmux last <session-ref>`                  | Print a session's last response (`--turns <n>`, `--json`) ([docs](handoff.md))                                              |
+| `ccmux handoff <from> [to]`                 | Hand a session's last response to another session (`--turns`, `--note`, `--spawn`, `--agent`, `--cwd`) ([docs](handoff.md)) |
 | `ccmux send <id> <text>`                    | Send text to a session's tmux pane (multiline pastes as one message; `--no-enter` skips submit)                                  |
 | `ccmux send <id> --stdin`                   | Same, reading the text from stdin instead of argv                                                                                |
 | `ccmux screen [id]`                         | Capture pane content                                                                                                             |
@@ -553,7 +553,7 @@ hooks, so run `ccmux setup` if the action isn't offered.
 Today **Claude Code** is the only agent that ships a fork command, because it
 is the only one whose behavior when resuming a still-running session has been
 verified. Adding another is one config line once you have checked it yourself
-(see [docs/agent-adapters.md](docs/agent-adapters.md#forking-a-session)).
+(see [docs/agent-adapters.md](agent-adapters.md#forking-a-session)).
 
 ### Worktrees Panel
 
@@ -596,7 +596,7 @@ There is no `--yes` and no automatic mode; removals are always confirmed interac
 
 ### Programmatic Invocation
 
-`ccmux invoke` runs a single agent turn and writes the response to stdout, so you can use real agents in shell pipelines and scripts. See [`docs/invoke.md`](docs/invoke.md) for the full reference.
+`ccmux invoke` runs a single agent turn and writes the response to stdout, so you can use real agents in shell pipelines and scripts. See [`docs/invoke.md`](invoke.md) for the full reference.
 
 ```bash
 ccmux invoke claude "say hi in one word"
@@ -606,11 +606,11 @@ git diff main | ccmux invoke claude "Review this diff"
 
 Claude runs interactively in a dedicated tmux session and returns clean text parsed from the transcript JSONL. Codex, Cursor, OpenCode, Pi, oh-my-pi, Antigravity, Copilot, and Gemini run as non-interactive subprocesses (`codex exec -o`, `cursor-agent --print`, `opencode run --format json`, `pi -p`, `omp -p`, `agy -p`, `copilot -p --allow-all-tools`, `gemini -p`) and return the agent's clean response text.
 
-For orchestration, name an invocation with `--id <id>`, then use `ccmux invoke list`, `ccmux invoke cancel <id>`, and `ccmux invoke result <id>` to watch, cancel, or read its full captured output by that id. See [`docs/invoke.md`](docs/invoke.md#fire-and-poll---id-list-cancel-result) for the fire-and-poll reference.
+For orchestration, name an invocation with `--id <id>`, then use `ccmux invoke list`, `ccmux invoke cancel <id>`, and `ccmux invoke result <id>` to watch, cancel, or read its full captured output by that id. See [`docs/invoke.md`](invoke.md#fire-and-poll---id-list-cancel-result) for the fire-and-poll reference.
 
 ### Reading and Handing Off Between Sessions
 
-`ccmux last` prints a session's last response; `ccmux handoff` moves it into another session without the text passing through whoever ran the command. See [`docs/handoff.md`](docs/handoff.md) for the full reference.
+`ccmux last` prints a session's last response; `ccmux handoff` moves it into another session without the text passing through whoever ran the command. See [`docs/handoff.md`](handoff.md) for the full reference.
 
 ```bash
 ccmux last codex                       # print the last response, pipeable
@@ -639,7 +639,7 @@ This repo ships two [Agent Skills](https://agentskills.io) for your coding agent
 /plugin install ccmux@ccmux
 ```
 
-Other skills-capable agents (Codex, Cursor, OpenCode, and others) can use the same skills by copying them into their skills directory. Both are additive glue for the ccmux CLI, which must be installed and on your `PATH`. See [`plugins/ccmux/README.md`](plugins/ccmux/README.md) for details.
+Other skills-capable agents (Codex, Cursor, OpenCode, and others) can use the same skills by copying them into their skills directory. Both are additive glue for the ccmux CLI, which must be installed and on your `PATH`. See [`.claude-plugin/plugins/ccmux/README.md`](../.claude-plugin/plugins/ccmux/README.md) for details.
 
 ## ⌨️ Keyboard Controls
 
@@ -974,7 +974,7 @@ ccmux setup --status           # Report install state without writing
 ccmux setup --uninstall        # Remove hooks
 ```
 
-Hooks write PID marker files under `~/.config/ccmux/session-pids/` whenever a session starts or begins its first invocation, a turn completes, or the agent asks the user to approve a tool. The daemon picks up the markers in real time via a filesystem watcher. See [`docs/architecture.md#hook-lifecycle`](./docs/architecture.md#hook-lifecycle) for the full flow (marker writes, chokidar dispatch, per-agent correlation).
+Hooks write PID marker files under `~/.config/ccmux/session-pids/` whenever a session starts or begins its first invocation, a turn completes, or the agent asks the user to approve a tool. The daemon picks up the markers in real time via a filesystem watcher. See [`docs/architecture.md#hook-lifecycle`](architecture.md#hook-lifecycle) for the full flow (marker writes, chokidar dispatch, per-agent correlation).
 
 Gemini CLI is tracked through process detection and terminal pattern matching, so it needs no setup.
 
@@ -1136,7 +1136,7 @@ You can also override built-in agent settings by using the agent's name as the k
 
 \* Required for new agents; optional when overriding built-in agents.
 
-Invoke-related fields (`invokeMode`, `errorRules`, `readyPattern`) are documented in [`docs/invoke.md`](docs/invoke.md).
+Invoke-related fields (`invokeMode`, `errorRules`, `readyPattern`) are documented in [`docs/invoke.md`](invoke.md).
 
 Each `terminalRules` entry must define exactly one matcher:
 
@@ -1203,13 +1203,13 @@ Nested tmux (a local tmux, SSH, then a remote tmux where ccmux runs) is detected
 ccmux has three layers: agents running in tmux panes, a background daemon that observes them, and clients (TUI + CLI utilities) that consume daemon state over HTTP/SSE.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./docs/system-overview-dark.svg">
-  <img alt="ccmux system overview" src="./docs/system-overview-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="./system-overview-dark.svg">
+  <img alt="ccmux system overview" src="./system-overview-light.svg">
 </picture>
 
 The daemon merges three signals into one session state: log parsing for agents that write JSONL transcripts, terminal pattern matching for agents that don't, and PID marker files written by hook adapters for authoritative session-to-pane mapping. It exposes a local HTTP API with SSE streaming on port 2269. The TUI connects as an SSE client and renders state reactively using Solid.js via the [@opentui/solid](https://github.com/anomalyco/opentui) framework.
 
-For deeper internals (status detection cascade, session-to-pane binding, hook event lifecycle, PR enrichment, background agents, code map), see [`docs/architecture.md`](./docs/architecture.md). Per-agent hook quirks and the agent-owned files ccmux reads are in [`docs/agent-adapters.md`](./docs/agent-adapters.md).
+For deeper internals (status detection cascade, session-to-pane binding, hook event lifecycle, PR enrichment, background agents, code map), see [`docs/architecture.md`](architecture.md). Per-agent hook quirks and the agent-owned files ccmux reads are in [`docs/agent-adapters.md`](agent-adapters.md).
 
 <details>
 <summary><strong>Session states</strong></summary>

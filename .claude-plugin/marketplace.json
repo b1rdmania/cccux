@@ -8,7 +8,7 @@
     {
       "name": "ccmux",
       "description": "Drive the ccmux cross-harness CLI to dispatch work to other AI coding agents (Claude Code, Codex, Cursor, OpenCode, Pi, Gemini) through programmatic ccmux invoke calls. Requires the ccmux CLI on PATH.",
-      "source": "./plugins/ccmux",
+      "source": "./.claude-plugin/plugins/ccmux",
       "category": "development",
       "version": "1.0.0",
       "author": {

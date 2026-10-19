@@ -1,7 +1,7 @@
-# Records demo/cccux.gif and demo/cccux.mp4 against real Claude Code agents.
-# Run from the repo root: vhs demo/cccux.tape (needs Claude Code, tmux, Bun).
-Output demo/cccux.gif
-Output demo/cccux.mp4
+# Records docs/demo/cccux.gif and docs/demo/cccux.mp4 against real Claude Code agents.
+# Run from the repo root: vhs docs/demo/cccux.tape (needs Claude Code, tmux, Bun).
+Output docs/demo/cccux.gif
+Output docs/demo/cccux.mp4
 
 Set Shell zsh
 Set FontSize 15
@@ -14,7 +14,7 @@ Set TypingSpeed 60ms
 Hide
 Sleep 3s
 Type "export CCMUX_HOME=/tmp/cccux-demo/ccmux CCMUX_TMUX_SOCKET=cccux-demo CCMUX_PORT=2272 PATH=$PWD/bin:$PATH" Enter
-Type "PROMPT_DELAY=6 demo/setup.sh >/dev/null 2>&1; echo READY-$((40+2))" Enter
+Type "PROMPT_DELAY=6 docs/demo/setup.sh >/dev/null 2>&1; echo READY-$((40+2))" Enter
 Wait+Screen@120s /READY-42/
 Type "tmux -L cccux-demo new-session -A -s chair \; set status off" Enter
 Sleep 1.5s
