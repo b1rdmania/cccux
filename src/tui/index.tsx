@@ -137,7 +137,8 @@ export async function launchTUI(options: TUIOptions = {}): Promise<void> {
     } catch {}
     if (CHAIR && !options.sidebar) {
       const slip = chairReceipt();
-      if (slip) process.stdout.write(slip);
+      // The renderer leaves the old screen behind; wipe it so the slip prints clean.
+      if (slip) process.stdout.write("\x1b[2J\x1b[H" + slip);
     }
   });
   if (CHAIR) chair.pickerStarted();
