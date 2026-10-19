@@ -53,6 +53,7 @@ import { createPromptBlockCache } from "./prompt-block-cache";
 import { theme } from "../theme";
 import { socketErrorMessage } from "../../lib/tmux-socket";
 import { Text } from "./Text";
+import { CHAIR, CHAIR_ART } from "../../lib/chair";
 
 interface SessionListProps {
   items: FlatItem[];
@@ -465,7 +466,21 @@ export const SessionList: Component<SessionListProps> = (props) => {
             <box paddingLeft={1} paddingTop={1}>
               <Show
                 when={props.socketError}
-                fallback={<Text fg={theme.overlay}>No sessions found</Text>}
+                fallback={
+                  CHAIR ? (
+                    <box flexDirection="column">
+                      <For each={CHAIR_ART}>
+                        {(line) => <Text fg={theme.overlay}>{line}</Text>}
+                      </For>
+                      <box height={1} />
+                      <Text fg={theme.overlay}>
+                        Nobody's working. Sit down anyway.
+                      </Text>
+                    </box>
+                  ) : (
+                    <Text fg={theme.overlay}>No sessions found</Text>
+                  )
+                }
               >
                 {(error: () => TmuxSocketError) => (
                   <Text fg={theme.red}>

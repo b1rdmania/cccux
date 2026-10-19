@@ -1,5 +1,17 @@
 # cccux
 
+```
+   ┌─────┐
+   │     │
+   │     │
+   └──┬──┘
+╭─────┴─────╮  ← you
+╰─────┬─────╯
+      │
+ ╶────┼────╴
+ ●    ●    ●
+```
+
 Your agents do the work. You sit in the corner and watch.
 
 cccux is [ccmux](https://github.com/epilande/ccmux) with one change: you're in the chair.

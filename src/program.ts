@@ -1,4 +1,4 @@
-import { BIN, CHAIR } from "./lib/chair";
+import { BIN, CHAIR, CHAIR_ART } from "./lib/chair";
 import { Command } from "commander";
 import pkg from "../package.json" with { type: "json" };
 import { createDaemonCommand } from "./commands/daemon";
@@ -38,6 +38,10 @@ export function createProgram(): Command {
         : "Track all your AI coding agents (Claude Code, Codex, Cursor, ...) in tmux and jump to the one that needs you",
     )
     .version(pkg.version);
+
+  if (CHAIR) {
+    program.addHelpText("beforeAll", `\n${CHAIR_ART.join("\n")}\n`);
+  }
 
   program.addCommand(createDaemonCommand());
   program.addCommand(createShowCommand());

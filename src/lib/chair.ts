@@ -57,3 +57,15 @@ const SHUSH = [
 export function chairShush(): string {
   return SHUSH[Math.floor(Math.random() * SHUSH.length)]!;
 }
+
+export const CHAIR_ART = [
+  "   ┌─────┐",
+  "   │     │",
+  "   │     │",
+  "   └──┬──┘",
+  "╭─────┴─────╮  ← you",
+  "╰─────┬─────╯",
+  "      │",
+  " ╶────┼────╴",
+  " ●    ●    ●",
+];
