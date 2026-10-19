@@ -8,6 +8,7 @@ import { truncateText } from "../utils/format";
 import { theme } from "../theme";
 import { Text } from "./Text";
 import { CHAIR } from "../../lib/chair";
+import { chair } from "../chair-state";
 
 const MAX_WIDTH = 50;
 const MIN_WIDTH = 24;
@@ -27,6 +28,7 @@ export const ConfirmationDialog: Component<ConfirmationDialogProps> = (
 ) => {
   const title = createMemo(() => {
     if (CHAIR && props.action !== "send-review" && props.action !== "restart") {
+      if (chair.armed()) return "They'll remember this.";
       return props.action === "kill-all" ? "Stop all of them?" : "Intervene?";
     }
     switch (props.action) {
@@ -58,6 +60,7 @@ export const ConfirmationDialog: Component<ConfirmationDialogProps> = (
       const n = props.sessionCount ?? 0;
       return `(${n} session${n !== 1 ? "s" : ""})`;
     }
+    if (CHAIR && chair.armed()) return "press y again if you really mean it";
     if (CHAIR && (props.action === "kill" || props.action == null)) {
       return "are you sure? they seemed happy";
     }
@@ -106,7 +109,7 @@ export const ConfirmationDialog: Component<ConfirmationDialogProps> = (
           <Text fg={theme.green}>
             <strong>Y</strong>
           </Text>
-          <Text fg={theme.overlay}>{CHAIR ? " do it " : " confirm "}</Text>
+          <Text fg={theme.overlay}>{CHAIR ? (chair.armed() ? " do it anyway " : " do it ") : " confirm "}</Text>
         </box>
         <box
           flexDirection="row"

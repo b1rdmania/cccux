@@ -14,6 +14,7 @@ You need [VHS](https://github.com/charmbracelet/vhs), Claude Code, tmux and Bun.
 | :-- | :-- |
 | `setup.sh` | Makes four repos in `/tmp/cccux-demo`, starts an agent in each on a separate tmux server, and sends each a prompt. |
 | `hooks.ts` | Writes the ccmux hook scripts and a settings file into `/tmp/cccux-demo`. |
-| `cccux.tape` | Opens cccux, approves one permission prompt, tries to type, and opens the intervene dialog. |
+| `cccux.tape` | Opens cccux, tries to type, approves one prompt, tries to stop an agent, quits, then joins in. |
+| `*.png` | Frames from the recording, used in the main README. |
 
 The demo does not change `~/.claude` or `~/.config/ccmux`. The agents skip your user settings, so they ask for permission like a new install. The demo daemon uses its own home folder, tmux server and port (2272).

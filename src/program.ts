@@ -41,6 +41,18 @@ export function createProgram(): Command {
 
   if (CHAIR) {
     program.addHelpText("beforeAll", `\n${CHAIR_ART.join("\n")}\n`);
+    program.addHelpText(
+      "after",
+      `
+Modes (cccux --mode <name>):
+  watch       y/n and menu keys. Misbehave and you lose n. (default)
+  just-watch  nothing. not even y/n.
+  join-in     you can type. every message is wrapped in an apology.
+  beg         the only word you can type is "please".
+  yes-man     y only.
+
+  --let-me-type   the keyboard back, if you can say the words.`,
+    );
     program
       .command("chair [name]")
       .description(`Print a chair (${Object.keys(CHAIRS).join(", ")}, or all)`)

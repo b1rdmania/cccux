@@ -1,3 +1,5 @@
+import { CHAIR } from "../lib/chair";
+import { chair, chairReceipt } from "./chair-state";
 import { render } from "@opentui/solid";
 import {
   CliRenderEvents,
@@ -133,7 +135,12 @@ export async function launchTUI(options: TUIOptions = {}): Promise<void> {
     try {
       renderer.destroy();
     } catch {}
+    if (CHAIR && !options.sidebar) {
+      const slip = chairReceipt();
+      if (slip) process.stdout.write(slip);
+    }
   });
+  if (CHAIR) chair.pickerStarted();
 
   await render(
     () => (

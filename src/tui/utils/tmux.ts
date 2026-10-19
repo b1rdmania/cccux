@@ -99,6 +99,17 @@ export async function sendKeys(
   }
 }
 
+/** Type a whole line into a pane and submit it. */
+export async function sendText(target: string, text: string): Promise<boolean> {
+  try {
+    if (!(await tmuxSendKeys(target, "-l", text))) return false;
+    await Bun.sleep(150);
+    return tmuxSendKeys(target, "Enter");
+  } catch {
+    return false;
+  }
+}
+
 const FLASH_DURATION_MS = 500;
 
 /** Pane-flash background, read at call time so it follows the active theme

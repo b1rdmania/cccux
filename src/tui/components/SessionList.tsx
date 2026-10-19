@@ -54,6 +54,7 @@ import { theme } from "../theme";
 import { socketErrorMessage } from "../../lib/tmux-socket";
 import { Text } from "./Text";
 import { CHAIR, CHAIR_ART } from "../../lib/chair";
+import { ChairPanel } from "./ChairPanel";
 
 interface SessionListProps {
   items: FlatItem[];
@@ -514,6 +515,9 @@ export const SessionList: Component<SessionListProps> = (props) => {
           </For>
         </scrollbox>
       </Show>
+      {CHAIR && !props.sidebar && props.items.length > 0 ? (
+        <ChairPanel sessions={props.sessions ?? []} />
+      ) : null}
     </box>
   );
 };

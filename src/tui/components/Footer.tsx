@@ -2,7 +2,31 @@ import type { Component } from "solid-js";
 import { Switch, Match } from "solid-js";
 import { useSharedTerminalDimensions } from "../utils/use-shared-dimensions";
 import { DEFAULT_GROUP_BY, type GroupBy } from "../../lib/preferences";
-import { CHAIR, HANDS } from "../../lib/chair";
+import { CHAIR, HANDS, MODE, YES_ONLY_AFTER } from "../../lib/chair";
+import { chair } from "../chair-state";
+
+/** The footer while an agent pane has focus: what the chair lets through. */
+function chairFocusHint(): string {
+  const out = "tab/esc back to your chair";
+  switch (MODE) {
+    case "just-watch":
+      return `${out} · nothing. you're just watching`;
+    case "yes-man":
+      return `${out} · y only`;
+    case "join-in":
+    case "beg": {
+      const typed = chair.buffer();
+      const what = MODE === "beg" ? "please" : "a message";
+      return typed
+        ? `${out} · typing: ${typed}▏ · enter send`
+        : `${out} · type ${what}, enter to send · y/n when asked`;
+    }
+    default:
+      return chair.blocked() >= YES_ONLY_AFTER
+        ? `${out} · y only. you lost n`
+        : `${out} · y/n/1-3/enter only`;
+  }
+}
 import { theme } from "../theme";
 import { Text } from "./Text";
 
@@ -202,14 +226,16 @@ export const Footer: Component<FooterProps> = (props) => {
         </Match>
         <Match when={props.previewFocused}>
           <Text fg={theme.overlay}>
-            {CHAIR && !HANDS
-              ? "tab/esc back to your chair · y/n/1-3/enter only"
-              : "tab/esc exit focus · keys sent to pane"}
+            {CHAIR && !HANDS ? chairFocusHint() : "tab/esc exit focus · keys sent to pane"}
           </Text>
         </Match>
         <Match when={props.confirmMode}>
           <Text fg={theme.overlay}>
-            {CHAIR ? "y do it · n let them be" : "y confirm · n/Esc cancel"}
+            {CHAIR
+              ? chair.armed()
+                ? "y do it anyway · n let them be"
+                : "y do it · n let them be"
+              : "y confirm · n/Esc cancel"}
           </Text>
         </Match>
         <Match when={props.newSessionMode}>

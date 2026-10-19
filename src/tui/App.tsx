@@ -5,6 +5,7 @@ import {
   onMount,
   onCleanup,
   Show,
+  For,
   createSignal,
   createEffect,
   createMemo,
@@ -42,6 +43,7 @@ import { SSEClient } from "./utils/sse";
 import {
   switchToPane,
   sendKeys,
+  sendText,
   flashPane,
   flashPaneDetached,
   notifyActivePane,
@@ -131,7 +133,18 @@ import { createIdleGcScheduler } from "./utils/idle-gc";
 import { setSpinnerPaused } from "./utils/useStatusIcon";
 import { markStartup, reportStartup } from "../lib/startup-timing";
 import { Text } from "./components/Text";
-import { chairAllowsKey, chairShush } from "../lib/chair";
+import {
+  APPROVED,
+  CHAIR,
+  MODE,
+  REFUSED,
+  SIT_DOWN,
+  chairKeyVerdict,
+  chairShush,
+  joinInWrap,
+  pick,
+} from "../lib/chair";
+import { chair } from "./chair-state";
 
 /** Long enough to read a sentence that sends the user to the README. The
  *  shared-session refusal is the only place a user hears that a popup on a
@@ -297,6 +310,38 @@ export function App(props: AppProps) {
    *  a different server, so we refuse rather than hit the wrong pane. Reads the
    *  verdict cached in utils/server-guard.ts, shared with the read-only
    *  consumers (preview capture, search pane cache, sidebar flash). */
+  /** `join-in` and `beg` type into a buffer instead of the pane, so the
+   *  whole message can be wrapped (or refused) before the agent sees it. */
+  function chairBufferKey(
+    pane: string | null,
+    event: { name: string; sequence?: string },
+  ): void {
+    const { name } = event;
+    if (name === "backspace") {
+      chair.setBuffer((b) => b.slice(0, -1));
+      return;
+    }
+    if (name === "return" || name === "enter") {
+      const text = chair.buffer().trim();
+      chair.setBuffer("");
+      if (!text || !pane || !ensureSameServer()) return;
+      if (MODE === "beg" && text !== "please") {
+        store.actions.showToast("say please. all of it.");
+        return;
+      }
+      void sendText(pane, MODE === "join-in" ? joinInWrap(text) : text);
+      chair.messageSent();
+      setPreviewRefreshKey((k) => k + 1);
+      store.actions.showToast(
+        MODE === "join-in" ? "sent. they'll get to it" : "they heard you. nothing will change",
+      );
+      return;
+    }
+    const ch =
+      name === "space" ? " " : event.sequence?.length === 1 ? event.sequence : name;
+    chair.setBuffer((b) => b + ch);
+  }
+
   function ensureSameServer(): boolean {
     if (isSameServerCached()) return true;
     store.actions.showToast("Target pane is on a different tmux server");
@@ -3592,11 +3637,20 @@ export function App(props: AppProps) {
 
     if (store.state.confirmMode) {
       if (key === "y" || key === "Y" || key === "return" || key === "enter") {
+        // In the chair, stopping an agent takes two yeses.
+        const action = store.state.confirmAction;
+        if (CHAIR && !chair.armed() && action !== "send-review" && action !== "restart") {
+          chair.setArmed(true);
+          event.preventDefault();
+          return;
+        }
+        chair.setArmed(false);
         confirmDialogAction();
         event.preventDefault();
         return;
       }
       if (key === "n" || key === "N" || key === "escape") {
+        chair.setArmed(false);
         cancelConfirmDialog();
         event.preventDefault();
         return;
@@ -3690,6 +3744,7 @@ export function App(props: AppProps) {
     // Preview focus mode: forward keys to tmux pane
     if (store.state.previewFocused) {
       if (key === "tab" || key === "escape") {
+        chair.setBuffer("");
         store.actions.exitPreviewFocus();
       } else if (event.ctrl && (key === "n" || key === "p")) {
         store.actions.moveSelection(key === "n" ? 1 : -1);
@@ -3707,11 +3762,23 @@ export function App(props: AppProps) {
         previewScrollbox.scrollTo(previewScrollbox.scrollTop + delta);
       } else {
         const session = store.selectedSession();
-        if (!chairAllowsKey(key, !!event.ctrl, !!event.meta)) {
-          store.actions.showToast(chairShush());
+        const verdict = chairKeyVerdict(event, {
+          waiting: session?.status === "waiting",
+          blocked: chair.blocked(),
+          buffer: chair.buffer(),
+        });
+        if (verdict.action === "block") {
+          chair.block();
+          store.actions.showToast(verdict.reason ?? chairShush(chair.blocked()));
+        } else if (verdict.action === "buffer") {
+          chairBufferKey(session?.tmuxPane ?? null, event);
         } else if (session?.tmuxPane && ensureSameServer()) {
           sendKeys(session.tmuxPane, event);
           setPreviewRefreshKey((k) => k + 1);
+          if (CHAIR && verdict.answer && session.status === "waiting") {
+            chair.answered(verdict.answer);
+            store.actions.showToast(pick(verdict.answer === "yes" ? APPROVED : REFUSED));
+          }
         }
       }
       event.preventDefault();
@@ -4235,6 +4302,21 @@ export function App(props: AppProps) {
           />
         </Show>
 
+        <Show when={CHAIR && chair.sitDown()}>
+          <box
+            position="absolute"
+            top={0}
+            left={0}
+            width="100%"
+            height="100%"
+            backgroundColor={theme.red}
+            flexDirection="column"
+            justifyContent="center"
+            alignItems="center"
+          >
+            <For each={SIT_DOWN}>{(line) => <Text fg={theme.base}>{line}</Text>}</For>
+          </box>
+        </Show>
         <Show when={store.state.confirmMode}>
           <ConfirmationDialog
             session={getSessionById(store.state.confirmSessionId || "")}

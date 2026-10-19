@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # cccux: ccmux, but you're in the chair. Same daemon, same hooks, same
-# config; only the costume changes. `--let-me-type` gives the keyboard back.
+# config; only the costume changes.
+#   --mode <watch|just-watch|join-in|beg|yes-man>   how much you're allowed
+#   --let-me-type                                  the keyboard back, at a price
 SOURCE="${BASH_SOURCE[0]}"
 while [ -L "$SOURCE" ]; do
   DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
@@ -9,7 +11,26 @@ while [ -L "$SOURCE" ]; do
 done
 export CCCUX=1
 args=()
-for a in "$@"; do
-  if [ "$a" = "--let-me-type" ]; then export CCCUX_HANDS=1; else args+=("$a"); fi
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --let-me-type)
+      printf 'Type "I am the main character" to continue: '
+      read -r answer
+      if [ "$answer" != "I am the main character" ]; then
+        echo "Didn't think so. Back in the chair."
+        exit 1
+      fi
+      export CCCUX_HANDS=1 ;;
+    --mode)
+      shift
+      case "$1" in
+        watch|just-watch|join-in|beg|yes-man) export CCCUX_MODE="$1" ;;
+        *) echo "No mode called '$1'. Try watch, just-watch, join-in, beg or yes-man." >&2; exit 1 ;;
+      esac ;;
+    --mode=*)
+      set -- "--mode" "${1#--mode=}" "${@:2}"; continue ;;
+    *) args+=("$1") ;;
+  esac
+  shift
 done
 exec "$(cd -P "$(dirname "$SOURCE")" && pwd)/ccmux" "${args[@]}"
